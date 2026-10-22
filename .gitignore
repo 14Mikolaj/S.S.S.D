@@ -37,3 +37,8 @@ Desktop.ini
 /Extr/
 /intro.py
 /music/
+
+# Expanded-game saves and their recovery copies
+/.saves/
+*.save.json
+*.save.json.*
