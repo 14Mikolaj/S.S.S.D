@@ -5,7 +5,7 @@ You found a spooder. You are not a big fan of spooders.
 
      ____
     (0  0)              Spooder, lvl 3
-//// -vv- \\\\\\\     
+//// -vv- \\\\\\\\     
                         [1] hit (''',p_dmg_min,'''-''',p_dmg_max,''')
                         [2] check pots
                         [3] run for your life before the great one
@@ -22,7 +22,7 @@ def spiderhit(edamage):
 
      ____
     (0  0)              Spooder crawls over you
-//// -vv- \\\\\\\      
+//// -vv- \\\\\\\\      
                         You somehow took ''',edamage,''' damage???
                         
                       
@@ -39,7 +39,7 @@ def attack_spider(damage):
  
      ____ oh...
     (0  0)             You attack the spooder for ''',damage,''' damage.
-//// -vv- \\\\\\\     
+//// -vv- \\\\\\\\     
                     
                         
                       
@@ -56,7 +56,7 @@ def spider_dead(xp_drop,g_drop,TaskSpid,ob,Spooder_Kills):
   
      ____               The spooder imploded. Not a nice sight
     (x  x)             
-//// -vv- \\\\\\\        
+//// -vv- \\\\\\\\        
                         You earnt ''',xp_drop,''' xp
                         And earnt $ ''',g_drop)
     if TaskSpid == True and ob < Spooder_Kills:
@@ -74,7 +74,7 @@ def attack_spid_crit(damage):
 
      ____
     (0  0)             you CRIT! dealing ''',damage,''' damage to the spooder.
-//// -vv- \\\\\\\     
+//// -vv- \\\\\\\\     
                         
                         
                       

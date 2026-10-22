@@ -130,6 +130,37 @@ def cls():
 
 
 
+def recalculate_stats():
+    """Derive current stats from base stats and the equipped items."""
+    global p_str, p_stm, p_spd, p_spd_b_w, p_spd_b_u
+    global p_max_hp_b, p_max_hp, p_hp, p_dmg_min, p_dmg_max, p_crit_c
+    weapon_strength = {'Your Fist': 0, 'Stick': Stick,
+                       'Wooden Sword': Woodsword, 'Slingshot': Slingshot}
+    armour_stamina = {'Your Shirt': 0, 'Clothes': Clothes,
+                     'Leather pads': Leather, 'Chain mail': Chain}
+    utility_speed = {'Your Feet': 0, 'Your Sandals': Sandals,
+                     'Your Shoes': Shoes, 'Your Goggles': Goggles}
+    p_str = p_str_b + weapon_strength[cur_wep]
+    p_stm = p_stm_b + armour_stamina[cur_arm]
+    p_spd_b_w = 5 if cur_wep == 'Slingshot' else 0
+    p_spd_b_u = utility_speed[cur_uti]
+    p_spd = p_spd_b + p_spd_b_w + p_spd_b_u
+    p_max_hp_b = p_stm_b * 5
+    p_max_hp = p_stm * 5
+    p_hp = min(p_hp, p_max_hp)
+    p_dmg_min = p_str + 2
+    p_dmg_max = math.ceil(p_str * 1.3 + 5)
+    p_crit_c = min(p_spd / 100, 1)
+
+
+def use_potion():
+    """Consume one potion and restore the advertised 25% of maximum HP."""
+    global pot_n, p_hp
+    if pot_n > 0:
+        pot_n -= 1
+        p_hp = min(p_max_hp, p_hp + math.ceil(p_max_hp * .25))
+
+
 def levelup(p_lvl):
     cls()
     print('''
@@ -248,7 +279,7 @@ def items(pot_n):
       | \\   _\\ |        
       |\\ `~`= `/        
       | '.___.'         
-  .'` \\     |_          leave items [1]
+  .'` \\     |_          leave items [2]
 _'     '-__ / `-_
     ''')
     else:
@@ -292,7 +323,7 @@ _'     '-__ / `-_
 
 def arms(Clothes_t,Leather_t,Chain_t):
     print('''
-       .-"```'.         [1] Shirt (+0 str)''',end='')
+       .-"```'.         [1] Shirt (+0 stm)''',end='')
     if Clothes_t == True:
         print('''
       /   \\    \\        [2] Clothes (+1 stm)''',end='')
@@ -333,7 +364,7 @@ def utility(Sandals_t,Shoes_t,Goggles_t):
     else:
         print('''     /   / `\\__/ ''')
     if Goggles_t == True:
-        print('''     | .'  _  _|        [4] Goggles (+5 str +5 spd)''')
+        print('''     | .'  _  _|        [4] Goggles (+6 spd)''')
     else:
         print('''     | .'  _  _|''')
     print('''     \\(\\   6  6         
@@ -458,74 +489,74 @@ def forgec(money,kappas,p_hp,Stick_t,Woodsword_t,Slingshot_t,Clothes_t,Leather_t
                                                                                                  
                                                                                                  
   /        |          |         | |       ||_|_________|____    $''',money,'''  
- /         |          |         | |      /||_|_________|___ \    ''',kappas,'''
-|          |          |         | |      \||_|_________|____/ hp:''',p_hp,'''
+ /         |          |         | |      /||_|_________|___ \\    ''',kappas,'''
+|          |          |         | |      \\||_|_________|____/ hp:''',p_hp,'''
 |          |          |         | |       || '         '                             |          |
 |          |          |         | |                                   ______         |          |
 |          |          |         | |                                .-' ____ '-.      |          |
-|          |          |         | |                                \.-'    '-./      |          |
-|          |          |         | |                 __|_________|___\        /       |          |
-|          |          |         | |                |__|_________|___/        \       |          |
-|          |          |         | |                   '         '  /'-.____.-'\      |          |
+|          |          |         | |                                \\.-'    '-./      |          |
+|          |          |         | |                 __|_________|___\\        /       |          |
+|          |          |         | |                |__|_________|___/        \\       |          |
+|          |          |         | |                   '         '  /'-.____.-'\\      |          |
 |          |    ______|         | |_______  "Hi! I'm a blacksmith."'-.______.-'      |          |
-|          |   /      |_________|/       /\                                          |          |
+|          |   /      |_________|/       /\\                                          |          |
 |          |  /   o----                 / /                            ||            |          |
-|          | /_________________________/ /                            /  \           |          |
-|          |/__________________________\/                             \  /     ____  |          |
-|          |                                                          .\/.    |____| |          |
-|          |                                    _____                  /\      :||:  |          |
-|          |              )                    / ~~~ \                /  \      ||   |          |
-|          |             (                     \ `¿´ /               /    \     ||   |          |
-|          |    _____)_________________      _.-\ - /-._            /      \         |          |
-|          |   /  __(__________)____  /|  /¯¯¯¯/¯|¯|¯\¯¯¯¯\     _________________    |          |
-|          |  /  :@@@@@@@@@@@@(@@@@: / | (  ´)|´  ¯  `|(´  )    \________________\   |          |
-|          |  :. '-.@@@@@@@@@@@@.-' .: | |   ||       ||   |     \               /   |          |
-|          |  : '.  '-.______.-'  .' : |  \   )|     |(   /       '-._________.-'    |          |
-|          |__:   '-.__________.-'   : |___\==||_____||==/____|¯¯|_____||  |_________|          |
-|         /   :     |----------|     : |---/  |+-----++:0+----|  |    .'|  |_         \         |
-|        /    :     |----------|     :/'---UUUU+--+--+0000----|  |   |\.'__'.\         \        |
-|       /     '-.   |----------|   .-'         |  |  |        |__|   \|______|          \       |
-|      /         '-.|__________|.-'            |  |  |                                   \      |
-|     /                                        |  |  |                                    \     |
+|          | /_________________________/ /                            /  \\           |          |
+|          |/__________________________\\/                             \\  /     ____  |          |
+|          |                                                          .\\/.    |____| |          |
+|          |                                    _____                  /\\      :||:  |          |
+|          |              )                    / ~~~ \\                /  \\      ||   |          |
+|          |             (                     \\ `¿´ /               /    \\     ||   |          |
+|          |    _____)_________________      _.-\\ - /-._            /      \\         |          |
+|          |   /  __(__________)____  /|  /¯¯¯¯/¯|¯|¯\\¯¯¯¯\\     _________________    |          |
+|          |  /  :@@@@@@@@@@@@(@@@@: / | (  ´)|´  ¯  `|(´  )    \\________________\\   |          |
+|          |  :. '-.@@@@@@@@@@@@.-' .: | |   ||       ||   |     \\               /   |          |
+|          |  : '.  '-.______.-'  .' : |  \\   )|     |(   /       '-._________.-'    |          |
+|          |__:   '-.__________.-'   : |___\\==||_____||==/____|¯¯|_____||  |_________|          |
+|         /   :     |----------|     : |---/  |+-----++:0+----|  |    .'|  |_         \\         |
+|        /    :     |----------|     :/'---UUUU+--+--+0000----|  |   |\\.'__'.\\         \\        |
+|       /     '-.   |----------|   .-'         |  |  |        |__|   \\|______|          \\       |
+|      /         '-.|__________|.-'            |  |  |                                   \\      |
+|     /                                        |  |  |                                    \\     |
 ''',end='')
     if Stick_t == False:
-        print('''|    /        Buy stick [1] - $0               |__|__|                                     \    |
+        print('''|    /        Buy stick [1] - $0               |__|__|                                     \\    |
 ''',end='')
     elif Woodsword_t == False:
-        print('''|    /        Buy Woodsword [1] - $200         |__|__|                                     \    |
+        print('''|    /        Buy Woodsword [1] - $200         |__|__|                                     \\    |
 ''',end='')
     elif Slingshot_t == False:
-        print('''|    /        Buy Slingshot [1] - $1000        |__|__|                                     \    |
+        print('''|    /        Buy Slingshot [1] - $1000        |__|__|                                     \\    |
 ''',end='')
     else:
-        print('''|    /                                         |__|__|                                     \    |
+        print('''|    /                                         |__|__|                                     \\    |
 ''')
     if Clothes_t == False:
-        print('''|   /         Buy clothing [2] - $0            (__|__)                                      \   |
+        print('''|   /         Buy clothing [2] - $0            (__|__)                                      \\   |
 ''',end='')
     elif Leather_t == False:
-        print('''|   /         Buy Leather padding [2] - $200   (__|__)                                      \   |
+        print('''|   /         Buy Leather padding [2] - $200   (__|__)                                      \\   |
 ''',end='')
     elif Chain_t == False:
-        print('''|   /         Buy Chain mail [2] - $1250       (__|__)                                      \   |
+        print('''|   /         Buy Chain mail [2] - $1250       (__|__)                                      \\   |
 ''',end='')
     else:
-        print('''|   /                                          (__|__)                                      \   |
+        print('''|   /                                          (__|__)                                      \\   |
 ''',end='')
     if Sandals_t == False:
-        print('''|  /          Buy Sandals [3] - $0                                                           \  |
+        print('''|  /          Buy Sandals [3] - $0                                                           \\  |
 ''',end='')
     elif Shoes_t ==  False:
-        print('''|  /          Buy Shoes [3] - $200                                                           \  |
+        print('''|  /          Buy Shoes [3] - $200                                                           \\  |
 ''',end='')
     elif Goggles_t == False:
-        print('''|  /          Buy Goggles [3] - $800                                                         \  |
+        print('''|  /          Buy Goggles [3] - $800                                                         \\  |
 ''',end='')
     else:
-        print('''|  /                                                                                         \  |
+        print('''|  /                                                                                         \\  |
 ''',end='')
-    print('''| /           Leave [4]                                                                       \ |
-|/_____________________________________________________________________________________________\|
+    print('''| /           Leave [4]                                                                       \\ |
+|/_____________________________________________________________________________________________\\|
 ''',end='')
     return input()
 
@@ -533,41 +564,41 @@ def fnomoney():
     print('''
                                                                                                  
                                                                                                  
-  /        |          |         | |       ||_|_________|____                         |        \  
- /         |          |         | |      /||_|_________|___ \                        |         \ 
-|          |          |         | |      \||_|_________|____/                        |          |
+  /        |          |         | |       ||_|_________|____                         |        \\  
+ /         |          |         | |      /||_|_________|___ \\                        |         \\ 
+|          |          |         | |      \\||_|_________|____/                        |          |
 |          |          |         | |       || '         '                             |          |
 |          |          |         | |                                   ______         |          |
 |          |          |         | |                                .-' ____ '-.      |          |
-|          |          |         | |                                \.-'    '-./      |          |
-|          |          |         | |                 __|_________|___\        /       |          |
-|          |          |         | |                |__|_________|___/        \       |          |
-|          |          |         | |                   '         '  /'-.____.-'\      |          |
+|          |          |         | |                                \\.-'    '-./      |          |
+|          |          |         | |                 __|_________|___\\        /       |          |
+|          |          |         | |                |__|_________|___/        \\       |          |
+|          |          |         | |                   '         '  /'-.____.-'\\      |          |
 |          |    ______|         | |_______"You can't afford that!" '-.______.-'      |          |
-|          |   /      |_________|/       /\                                          |          |
+|          |   /      |_________|/       /\\                                          |          |
 |          |  /                         / /                            ||            |          |
-|          | /_________________________/ /                            /  \           |          |
-|          |/__________________________\/                             \  /     ____  |          |
-|          |                                                          .\/.    |____| |          |
-|          |                                    _____                  /\      :||:  |          |
-|          |              )                    / ~~~ \                /  \      ||   |          |
-|          |             (                     \ `¿´ /               /    \     ||   |          |
-|          |    _____)_________________      _.-\ ^ /-._            /      \         |          |
-|          |   /  __(__________)____  /|  /¯¯¯¯/¯|¯|¯\¯¯¯¯\     _________________    |          |
-|          |  /  :@@@@@@@@@@@@(@@@@: / | (  ´)|´  ¯  `|(´  )    \________________\   |          |
-|          |  :. '-.@@@@@@@@@@@@.-' .: | |   ||       ||   |     \               /   |          |
-|          |  : '.  '-.______.-'  .' : |  \   )|     |(   /       '-._________.-'    |          |
-|          |__:   '-.__________.-'   : |___\==||_____||==/____|¯¯|_____||  |_________|          |
-|         /   :     |----------|     : |---/  |+-----++:0+----|  |    .'|  |_         \         |
-|        /    :     |----------|     :/'---UUUU+--+--+0000----|  |   |\.'__'.\         \        |
-|       /     '-.   |----------|   .-'         |  |  |        |__|   \|______|          \       |
-|      /         '-.|__________|.-'            |  |  |                                   \      |
-|     /                                        |  |  |                                    \     |
-|    /                                         |__|__|                                     \    |
-|   /                                          (__|__)                                      \   |
-|  /                                                                                         \  |
-| /                                                                                           \ |
-|/_____________________________________________________________________________________________\|
+|          | /_________________________/ /                            /  \\           |          |
+|          |/__________________________\\/                             \\  /     ____  |          |
+|          |                                                          .\\/.    |____| |          |
+|          |                                    _____                  /\\      :||:  |          |
+|          |              )                    / ~~~ \\                /  \\      ||   |          |
+|          |             (                     \\ `¿´ /               /    \\     ||   |          |
+|          |    _____)_________________      _.-\\ ^ /-._            /      \\         |          |
+|          |   /  __(__________)____  /|  /¯¯¯¯/¯|¯|¯\\¯¯¯¯\\     _________________    |          |
+|          |  /  :@@@@@@@@@@@@(@@@@: / | (  ´)|´  ¯  `|(´  )    \\________________\\   |          |
+|          |  :. '-.@@@@@@@@@@@@.-' .: | |   ||       ||   |     \\               /   |          |
+|          |  : '.  '-.______.-'  .' : |  \\   )|     |(   /       '-._________.-'    |          |
+|          |__:   '-.__________.-'   : |___\\==||_____||==/____|¯¯|_____||  |_________|          |
+|         /   :     |----------|     : |---/  |+-----++:0+----|  |    .'|  |_         \\         |
+|        /    :     |----------|     :/'---UUUU+--+--+0000----|  |   |\\.'__'.\\         \\        |
+|       /     '-.   |----------|   .-'         |  |  |        |__|   \\|______|          \\       |
+|      /         '-.|__________|.-'            |  |  |                                   \\      |
+|     /                                        |  |  |                                    \\     |
+|    /                                         |__|__|                                     \\    |
+|   /                                          (__|__)                                      \\   |
+|  /                                                                                         \\  |
+| /                                                                                           \\ |
+|/_____________________________________________________________________________________________\\|
 ''')
     noreply = input()
 
@@ -661,11 +692,15 @@ while True:
         vi = maps.villagemap(money,p_hp)
         village = True
     elif ui == '2':
-        Farm = True
+        input('The farm was never finished. Press Enter to return to the world map.')
     elif ui == '3':
         cls()
         di = maps.desertmap(money,p_hp)
         desert = True
+    elif ui.lower() in ('q', 'quit'):
+        raise SystemExit
+    elif ui in ('4', '5', '6', '7', '8', '9', '10'):
+        input('This area was never finished. Press Enter to return to the world map.')
     elif ui == 'admin58859****478':
         cls()
         money = 10000000000000
@@ -673,16 +708,8 @@ while True:
         p_str_b = 5000
         p_stm_b = 5000
         p_spd_b = 5000
-        p_str = 5000
-        p_stm = 5000
-        p_spd = 5000
-        p_max_hp_b = p_stm*5
-        p_max_hp = p_max_hp_b
+        recalculate_stats()
         p_hp = p_max_hp
-        p_dmg_min = p_str+2
-        p_dmg_max = math.ceil(p_str*1.3+5)
-        p_crit_c = p_spd/100
-        p_lvl = 'ADMIN'
         p_xp_lvl = 9999999999999999999999
         p_statpt = 99999
         cls()
@@ -691,35 +718,22 @@ while True:
         cls()
         p_str_b += 2
         p_stm_b += 2
-        p_str += 2
-        p_stm += 2
-        p_max_hp_b = p_stm*5
-        p_max_hp = p_max_hp_b
+        recalculate_stats()
         p_hp = p_max_hp
-        p_dmg_min = p_str+2
-        p_dmg_max = math.ceil(p_str*1.3+5)
         David = True
         cls()
         noreply = input('Hello David.')
-    elif ui == 'Ϫϭϰϧϼ' or ui == 'Xehspfe' and Ϫϭϰϧϼ == False:
+    elif ui in ('Ϫϭϰϧϼ', 'Xehspfe') and Ϫϭϰϧϼ == False:
         p_str_b += 5
         p_spd_b += 1
-        p_str += 5
-        p_spd += 1
-        p_dmg_min = p_str+2
-        p_dmg_max = math.ceil(p_str*1.3+5)
-        p_crit_c = p_spd/100
+        recalculate_stats()
         Ϫϭϰϧϼ = True
         cls()
         noreply = input ('Ϫϭϰϧϼ, is this really you?')
-    elif ui == 'Ћεηϯϯκϡ' or ui == 'Thenttkil' and Ћεηϯϯκϡ == False:
+    elif ui in ('Ћεηϯϯκϡ', 'Thenttkil') and Ћεηϯϯκϡ == False:
         p_stm_b += 5
-        p_stm += 5
         p_spd_b += 1
-        p_spd += 1
-        p_crit_c = p_spd/100
-        p_max_hp_b = p_stm*5
-        p_max_hp = p_max_hp_b
+        recalculate_stats()
         p_hp = p_max_hp
         Ћεηϯϯκϡ = True
         cls()
@@ -738,7 +752,7 @@ while True:
         p_lvl += 1
         p_statpt += 3
     else:
-        noreply = input('something went wrong ¯\_(ツ)_/¯')
+        noreply = input('something went wrong ¯\\_(ツ)_/¯')
         cls()
     while village == True:
         if vi == '1':
@@ -755,11 +769,14 @@ while True:
         elif vi == '3':
             cls()
             inn = True
+        elif vi in ('5', '6'):
+            input('This location was never finished. Press Enter to return to the village.')
+            vi = maps.villagemap(money,p_hp)
         elif vi == '7':
             village = False
             cls()
         else:
-            noreply = input('something went wrong ¯\_(ツ)_/¯')
+            noreply = input('something went wrong ¯\\_(ツ)_/¯')
             cls()
             vi = maps.villagemap(money,p_hp)
         while house == True:
@@ -772,200 +789,58 @@ while True:
                     cls()
                     hi = housec(p_hp,money,kappas,cur_wep,cur_arm,p_statpt,cur_uti)
                 else:
-                    noreply = input('something went wrong ¯\_(ツ)_/¯')
+                    noreply = input('something went wrong ¯\\_(ツ)_/¯')
                     cls()
             elif hi == '2':
                 inventoryc = True
                 cls()
                 ii = inventory(cur_wep,cur_arm,cur_uti)
                 if ii == '1':
-                    item = True
                     cls()
                     iii = items(pot_n)
-                    if iii == '2':
-                        item = False
-                    elif iii == '1':
-                        if p_hp+(math.ceil(p_max_hp*.25)) > p_max_hp:
-                            p_hp = p_max_hp
-                            pot_n -= 1
-                        else:
-                            p_hp+=(math.ceil(p_max_hp*.25))
-                            pot_n -=1
-                    else:
-                        cls()
-                        noreply = input('something went wrong ¯\_(ツ)_/¯')
-                        cls()
-                        iii = items(pot_n)
-                        if iii == '1':
-                            t = True
+                    if iii == '1':
+                        use_potion()
                 elif ii == '2':
-                    weps = True
                     cls()
                     wi = weaps(Stick_t,Woodsword_t,Slingshot_t)
-                    if wi == '1':
-                        cls()
-                        noreply = input('you equip... fist?')
-                        cur_wep = 'Your Fist'
-                        p_str = p_str_b
-                        p_dmg_min = p_str+2
-                        p_dmg_max = math.ceil(p_str*1.3+5)
-                        if p_spd_b_w >0:
-                            p_spd_b_w = -p_spd_b_w
-                        p_spd+=p_spd_b_w
-                        p_crit_c = p_spd/100
-                        cls()
-                    elif wi == '2':
-                        if Stick_t == True:
-                            cls()
-                            noreply = input('you equip stick')
-                            cur_wep = 'Stick'
-                            p_str = p_str_b
-                            p_str += Stick
-                            p_dmg_min = p_str+2
-                            p_dmg_max = math.ceil(p_str*1.3+5)
-                            if p_spd_b_w >0:
-                                p_spd_b_w = -p_spd_b_w
-                            p_spd+=p_spd_b_w
-                            p_crit_c = p_spd/100
-                            cls()
-                    elif wi == '3':
-                        if Woodsword_t == True:
-                            cls()
-                            noreply = input('you equip Wooden Sword')
-                            cur_wep = 'Wooden Sword'
-                            p_str = p_str_b
-                            p_str += Woodsword
-                            p_dmg_min = p_str+2
-                            p_dmg_max = math.ceil(p_str*1.3+5)
-                            if p_spd_b_w >0:
-                                p_spd_b_w = -p_spd_b_w
-                            p_spd+=p_spd_b_w
-                            p_crit_c = p_spd/100
-                            cls()
-                    elif wi == '4':
-                        if Slingshot_t == True:
-                            cls()
-                            noreply = input('you equip Slingshot')
-                            cur_wep = 'Slingshot'
-                            p_str = p_str_b
-                            p_str += Slingshot
-                            p_dmg_min = p_str+2
-                            p_crit_c = p_spd/100
-                            if p_spd_b_w !=5:
-                                p_spd_b_w = 5
-                            p_spd+=p_spd_b_w
-                            p_crit_c = p_spd/100
-                            cls()
-                    elif wi == '7':
-                        print()
+                    weapons = {'1': ('Your Fist', True), '2': ('Stick', Stick_t),
+                               '3': ('Wooden Sword', Woodsword_t),
+                               '4': ('Slingshot', Slingshot_t)}
+                    if wi in weapons and weapons[wi][1]:
+                        cur_wep = weapons[wi][0]
+                        recalculate_stats()
+                        input('You equip ' + cur_wep + '.')
                 elif ii == '3':
-                    arm = True
                     cls()
                     ai = arms(Clothes_t,Leather_t,Chain_t)
-                    if ai == '1':
-                        cls()
-                        noreply = input('you equip shirt.')
-                        cur_arm = 'Your shirt'
-                        p_max_hp = p_max_hp_b
-                        p_stm = p_stm_b
-                        if p_hp+Shirt*5 <= p_max_hp:
-                            p_hp += Shirt*5
-                        elif p_hp> p_max_hp:
-                            p_hp = p_max_hp
-                        cls()
-                    elif ai == '2':
-                        if Clothes_t == True:
-                            cls()
-                            noreply = input('you equip Clothes.')
-                            cur_arm = 'Clothes'
-                            p_stm = p_stm_b
-                            p_stm += Clothes
-                            p_max_hp = p_stm*5
-                            if p_hp+Clothes*5 <= p_max_hp:
-                                p_hp += Clothes*5
-                            elif p_hp> p_max_hp:
-                                p_hp = p_max_hp
-                            cls()
-                    elif ai == '3':
-                        if Leather_t == True:
-                            cls()
-                            noreply = input('you equip Leather padding.')
-                            cur_arm = 'Leather pads'
-                            p_stm = p_stm_b
-                            p_stm += Leather
-                            p_max_hp = p_stm*5
-                            if p_hp+Leather*5 <= p_max_hp:
-                                p_hp += Leather*5
-                            elif p_hp> p_max_hp:
-                                p_hp = p_max_hp
-                            cls()
-                    elif ai == '4':
-                        if Chain_t == True:
-                            cls()
-                            noreply = input('you equip Chain mail.')
-                            cur_arm = 'Chain mail'
-                            p_stm = p_stm_b
-                            p_stm += Chain
-                            p_max_hp = p_stm*5
-                            if p_hp+Chain*5 <= p_max_hp:
-                                p_hp += Chain*5
-                            elif p_hp> p_max_hp:
-                                p_hp = p_max_hp
-                            cls()
-                    elif ai == '7':
-                        print('')
+                    armour = {'1': ('Your Shirt', True), '2': ('Clothes', Clothes_t),
+                              '3': ('Leather pads', Leather_t),
+                              '4': ('Chain mail', Chain_t)}
+                    if ai in armour and armour[ai][1]:
+                        cur_arm = armour[ai][0]
+                        recalculate_stats()
+                        input('You equip ' + cur_arm + '.')
                 elif ii == '4':
-                    uti = True
                     cls()
-                    ui = utility(Sandals_t,Shoes_t,Goggles_t)
-                    if ui == '1':
-                        cls()
-                        noreply = input('you equip your Feet ??')
-                        cur_uti = 'Your Feet'
-                        if p_spd_b_u != 0:
-                            p_spd_b_u = -p_spd_b_u
-                        p_spd += p_spd_b_u
-                        p_crit_c = p_spd/100
-                    elif ui == '2':
-                        if Sandals_t == True:
-                            cls()
-                            noreply = input('you equip Sandals.')
-                            cur_uti = 'Your Sandals'
-                            if p_spd_b_u != Sandals:
-                                p_spd_b_u = -p_spd_b_u
-                            p_spd += p_spd_b_u + Sandals
-                            p_crit_c = p_spd/100
-                    elif ui == '3':
-                        if Shoes_t == True:
-                            cls()
-                            noreply = input('you equip Shoes.')
-                            cur_uti = 'Your Shoes'
-                            if p_spd_b_u != Shoes:
-                                p_spd_b_u = -p_spd_b_u
-                            p_spd += p_spd_b_u + Shoes
-                            p_crit_c = p_spd/100
-                    elif ui == '4':
-                        if Goggles_t == True:
-                            cls()
-                            noreply = input('you equip Goggles. Smexy.')
-                            cur_uti = 'Your Goggles'
-                            if p_spd_b_u != Goggles:
-                                p_spd_b_u = -p_spd_b_u + Goggles
-                            p_spd += p_spd_b_u
-                            p_crit_c = p_spd/100
-                    else:
-                        print('')
+                    utility_choice = utility(Sandals_t,Shoes_t,Goggles_t)
+                    utilities = {'1': ('Your Feet', True), '2': ('Your Sandals', Sandals_t),
+                                 '3': ('Your Shoes', Shoes_t), '4': ('Your Goggles', Goggles_t)}
+                    if utility_choice in utilities and utilities[utility_choice][1]:
+                        cur_uti = utilities[utility_choice][0]
+                        recalculate_stats()
+                        input('You equip ' + cur_uti + '.')
                 elif ii == '5':
                     cls()
                     hi = housec(p_hp,money,kappas,cur_wep,cur_arm,p_statpt,cur_uti)
                 else:
-                    noreply = input('something went wrong ¯\_(ツ)_/¯')
+                    noreply = input('something went wrong ¯\\_(ツ)_/¯')
                     cls()
             elif hi == '3':
                 if p_statpt > 0:
                     stats = True
                 else:
                     cls()
+                    stats = False
                     noreply = input('you have no stat points... -__-')
                     cls()
                     hi = housec(p_hp,money,kappas,cur_wep,cur_arm,p_statpt,cur_uti)
@@ -976,27 +851,22 @@ while True:
                     cls()
                     if statin == '1':
                         p_str_b += 1
-                        p_str += 1
-                        p_dmg_min = p_str+2
-                        p_dmg_max = math.ceil(p_str*1.3+5)
+                        recalculate_stats()
                         p_statpt -=1
                         if p_statpt == 0:
                             stats = False
                             hi = housec(p_hp,money,kappas,cur_wep,cur_arm,p_statpt,cur_uti)
                     elif statin == '2':
                         p_stm_b +=1
-                        p_stm +=1
-                        p_max_hp_b = p_stm*5
-                        p_max_hp = p_max_hp_b
-                        p_hp += 5
+                        recalculate_stats()
+                        p_hp = min(p_max_hp, p_hp + 5)
                         p_statpt -=1
                         if p_statpt == 0:
                             stats = False
                             hi = housec(p_hp,money,kappas,cur_wep,cur_arm,p_statpt,cur_uti)
                     elif statin == '3':
                         p_spd_b +=1
-                        p_spd += 1
-                        p_crit_c = p_spd/100
+                        recalculate_stats()
                         p_statpt -=1
                         if p_statpt == 0:
                             stats = False
@@ -1014,7 +884,7 @@ while True:
                 cls()
                 house = False
             else:
-                noreply = input('something went wrong ¯\_(ツ)_/¯')
+                noreply = input('something went wrong ¯\\_(ツ)_/¯')
                 cls()
                 hi = housec(p_hp,money,kappas,cur_wep,cur_arm,p_statpt,cur_uti)
         while shop == True:
@@ -1022,36 +892,28 @@ while True:
                 cls()
                 if money < 15:
                     nomoney()
-                    shop = False
                 else:
                     while True:
                         try:
-                            no = buyc(money,kappas,p_hp)
-                            if no.isalpha() or no < '0':
+                            no = int(buyc(money,kappas,p_hp))
+                            if no < 0:
                                 raise ValueError
                             break
                         except ValueError:
-                            cls()
-                            noreply = input('something went wrong ¯\_(ツ)_/¯')
-                    no = int(no)
-                    if no*15 > money:
-                        cls()
+                            input('Enter a whole number of potions (0 to cancel). Press Enter to retry.')
+                    if no * 15 > money:
                         nomoney()
-                        cls()
-                        shop = False
                     else:
-                        money -= no*15
+                        money -= no * 15
                         pot_n += no
-                        shop = False
+                si = shopc(money,kappas,p_hp)
             elif si == '6':
                 cls()
                 shop = False
                 vi = maps.villagemap(money,p_hp)
                 cls()
             else:
-                cls()
-                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                cls()
+                input('Choose [1] to buy potions or [6] to leave.')
                 si = shopc(money,kappas,p_hp)
         while forge == True:
             cls()
@@ -1113,7 +975,7 @@ while True:
                 forge = False
             else:
                 cls()
-                noreply = input('something went wrong ¯\_(ツ)_/¯')
+                noreply = input('something went wrong ¯\\_(ツ)_/¯')
                 cls()
         while inn == True:
             cls()
@@ -1213,15 +1075,12 @@ an extra $1000 land in your pocket. :)
                             Task = False
                             TaskCam = False
                         elif vti == '2':
-                            inn = False
                             cls()
                 elif gi == '3':
                     cls()
-                    inn=False
-                    cls()
                 else:
                     cls()
-                    noreply = input('something went wrong ¯\_(ツ)_/¯')
+                    noreply = input('something went wrong ¯\\_(ツ)_/¯')
                     cls()
             elif ic == '2':
                 bi = maps.bartender()
@@ -1304,55 +1163,18 @@ Father: You forget to study, I forget to feed you.
                         maps.barthappy()
                         money += 500
                 elif bi == '2':
-                    inn = False
+                    cls()
                 else:
                     cls()
-                    noreply = input('something went wrong ¯\_(ツ)_/¯')
+                    noreply = input('something went wrong ¯\\_(ツ)_/¯')
                     cls()
             elif ic == '3':
                 inn=False
                 vi = maps.villagemap(money,p_hp)
             else:
                 cls()
-                noreply = input('something went wrong ¯\_(ツ)_/¯')
+                noreply = input('something went wrong ¯\\_(ツ)_/¯')
                 cls()
-    while Farm == True:
-        cls()
-        fi = maps.farmap(money,p_hp)
-        cls()
-        if fi == '1':
-            cls()
-            omi = maps.oldman(money,p_hp)
-            cls()
-            if omi == '1':
-                while True:
-                    try:
-                        cls()
-                        much = input('''
-
-how much would you like to invest? (enter $$$ number)
-
-You are investing :''')
-                        if much.isalpha() :
-                            raise ValueError
-                        break
-                    except ValueError:
-                        cls()
-                        noreply = input('something went wrong ¯\_(ツ)_/¯')
-                if much > money:
-                    print('''
-
-You aint got enough, son
-
-''')
-                else:
-                    investmoney += much
-                    time = 0
-                    print('''
-
-Thanks for investing, you will make some profit soon.
-
-''')
     while desert == True:
         if di == '1':
             desert = False
@@ -1389,31 +1211,13 @@ Thanks for investing, you will make some profit soon.
                             cactusbattle.attack_cact(damage)
                         e_hp = e_hp - damage
                         cls()
-                        edamage = random.randint(e_dmg_min,e_dmg_max)
-                        p_hp -= edamage
-                        cls()
-                        cactusbattle.cactushit(edamage)
-                        cls()
+                        if e_hp > 0:
+                            edamage = random.randint(e_dmg_min,e_dmg_max)
+                            p_hp -= edamage
+                            cls()
+                            cactusbattle.cactushit(edamage)
+                            cls()
                         if e_hp <= 0:
-                            if p_hp <= 0:
-                                defea = True
-                                while defea == True:
-                                    cls()
-                                    defe = maps.defeated(money,p_lvl)
-                                    if defe == '2':
-                                        quit()
-                                        exit()
-                                    elif defe == '1':
-                                        if money < p_lvl*250:
-                                            noreply = input('''
-Your money cannot bring your life back...
-        ''')
-                                        else:
-                                            money-=p_lvl*250
-                                            p_hp = p_max_hp
-                                            defea = False
-                                            Cactus = False
-                                            desert = False
                             g_drop = random.randint(g_drop_min,g_drop_max)
                             money += g_drop
                             p_xp += xp_drop
@@ -1421,8 +1225,8 @@ Your money cannot bring your life back...
                             cactusbattle.cactus_dead(xp_drop,g_drop,ob,Cacti,TaskCact)
                             if TaskCact == True and ob < Cacti:
                                 ob+=1
-                            if p_xp >= p_xp_lvl:
-                                p_xp = 0
+                            while p_xp >= p_xp_lvl:
+                                p_xp -= p_xp_lvl
                                 p_xp_lvl = math.ceil(p_xp_lvl*1.25)
                                 p_statpt += 3
                                 levelup(p_lvl)
@@ -1435,6 +1239,7 @@ Your money cannot bring your life back...
                             defea = True
                             while defea == True:
                                 cls()
+                                defe = maps.defeated(money,p_lvl)
                                 if defe == '2':
                                     quit()
                                     exit()
@@ -1453,48 +1258,11 @@ Your money cannot bring your life back...
                         cls()
                         item_input = items(pot_n)
                         cls()
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
+                        if item_input == '1':
+                            use_potion()
+                        elif item_input != '2':
+                            noreply = input('something went wrong ¯\\_(ツ)_/¯')
+                            cls()
                     elif ci =='3':
                         run()
                         Cactus = False
@@ -1502,7 +1270,7 @@ Your money cannot bring your life back...
                         di = maps.desertmap(money,p_hp)
                     else:
                         cls()
-                        noreply = input('something went wrong ¯\_(ツ)_/¯')
+                        noreply = input('something went wrong ¯\\_(ツ)_/¯')
                         cls()
             elif name_n == 2:
                 name = 'wild coyote'
@@ -1534,39 +1302,21 @@ Your money cannot bring your life back...
                             coyotebattle.attack_coyo(damage)
                         e_hp -= damage
                         cls()
-                        edamage = random.randint(e_dmg_min,e_dmg_max)
-                        p_hp -= edamage
-                        cls()
-                        coyotebattle.coyohit(edamage)
+                        if e_hp > 0:
+                            edamage = random.randint(e_dmg_min,e_dmg_max)
+                            p_hp -= edamage
+                            cls()
+                            coyotebattle.coyohit(edamage)
                         if e_hp <= 0:
-                            if p_hp <= 0:
-                                defea = True
-                                while defea == True:
-                                    cls()
-                                    defe = maps.defeated(money,p_lvl)
-                                    if defe == '2':
-                                        quit()
-                                        exit()
-                                    elif defe == '1':
-                                        if money < p_lvl*250:
-                                            noreply = input('''
-Your money cannot bring your life back...
-        ''')
-                                        else:
-                                            money-=p_lvl*250
-                                            p_hp = p_max_hp
-                                            defea = False
-                                            Coyote = False
-                                            desert = False
                             g_drop = random.randint(g_drop_min,g_drop_max)
                             money += g_drop
                             p_xp += xp_drop
                             cls()
                             coyotebattle.coyote_dead(xp_drop,g_drop,TaskCoyo,ob,Coyo_Fur)
-                            if TaskCoyo == True and ob < Coyo_fur:
+                            if TaskCoyo == True and ob < Coyo_Fur:
                                 ob+=1
-                            if p_xp >= p_xp_lvl:
-                                p_xp = 0
+                            while p_xp >= p_xp_lvl:
+                                p_xp -= p_xp_lvl
                                 p_xp_lvl = math.ceil(p_xp_lvl*1.25)
                                 p_statpt += 3
                                 levelup(p_lvl)
@@ -1597,48 +1347,12 @@ Your money cannot bring your life back...
                     elif ci == '2':
                         cls()
                         item_input = items(pot_n)
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
+                        cls()
+                        if item_input == '1':
+                            use_potion()
+                        elif item_input != '2':
+                            noreply = input('something went wrong ¯\\_(ツ)_/¯')
+                            cls()
                     elif ci =='3':
                         run()
                         Coyote = False
@@ -1646,7 +1360,7 @@ Your money cannot bring your life back...
                         di = maps.desertmap(money,p_hp)
                     else:
                         cls()
-                        noreply = input('something went wrong ¯\_(ツ)_/¯')
+                        noreply = input('something went wrong ¯\\_(ツ)_/¯')
                         cls()
                 cls()
             elif name_n == 3:
@@ -1678,30 +1392,12 @@ Your money cannot bring your life back...
                             spiderbattle.attack_spider(damage)
                         e_hp -= damage
                         cls()
-                        edamage = random.randint(e_dmg_min,e_dmg_max)
-                        p_hp -= edamage
-                        cls()
-                        spiderbattle.spiderhit(edamage)
+                        if e_hp > 0:
+                            edamage = random.randint(e_dmg_min,e_dmg_max)
+                            p_hp -= edamage
+                            cls()
+                            spiderbattle.spiderhit(edamage)
                         if e_hp <= 0:
-                            if p_hp <= 0:
-                                defea = True
-                                while defea == True:
-                                    cls()
-                                    defe = maps.defeated(money,p_lvl)
-                                    if defe == '2':
-                                        quit()
-                                        exit()
-                                    elif defe == '1':
-                                        if money < p_lvl*250:
-                                            noreply = input('''
-Your money cannot bring your life back...
-        ''')
-                                        else:
-                                            money-=p_lvl*250
-                                            p_hp = p_max_hp
-                                            defea = False
-                                            Spider = False
-                                            desert = False
                             g_drop = random.randint(g_drop_min,g_drop_max)
                             money += g_drop
                             p_xp += xp_drop
@@ -1709,8 +1405,8 @@ Your money cannot bring your life back...
                             spiderbattle.spider_dead(xp_drop,g_drop,TaskSpid,ob,Spooder_Kills)
                             if TaskSpid == True and ob < Spooder_Kills:
                                 ob+=1
-                            if p_xp >= p_xp_lvl:
-                                p_xp = 0
+                            while p_xp >= p_xp_lvl:
+                                p_xp -= p_xp_lvl
                                 p_xp_lvl = math.ceil(p_xp_lvl*1.25)
                                 p_statpt += 3
                                 levelup(p_lvl)
@@ -1741,48 +1437,12 @@ Your money cannot bring your life back...
                     elif si == '2':
                         cls()
                         item_input = items(pot_n)
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
+                        cls()
+                        if item_input == '1':
+                            use_potion()
+                        elif item_input != '2':
+                            noreply = input('something went wrong ¯\\_(ツ)_/¯')
+                            cls()
                     elif si =='3':
                         run()
                         Spider = False
@@ -1790,7 +1450,7 @@ Your money cannot bring your life back...
                         di = maps.desertmap(money,p_hp)
                     else:
                         cls()
-                        noreply = input('something went wrong ¯\_(ツ)_/¯')
+                        noreply = input('something went wrong ¯\\_(ツ)_/¯')
                         cls()
                 cls()
             elif name_n == 4:
@@ -1822,30 +1482,12 @@ Your money cannot bring your life back...
                             snakebattle.attack_snake(damage)
                         e_hp -= damage
                         cls()
-                        edamage = random.randint(e_dmg_min,e_dmg_max)
-                        p_hp -= edamage
-                        cls()
-                        snakebattle.snakehit(edamage)
+                        if e_hp > 0:
+                            edamage = random.randint(e_dmg_min,e_dmg_max)
+                            p_hp -= edamage
+                            cls()
+                            snakebattle.snakehit(edamage)
                         if e_hp <= 0:
-                            if p_hp <= 0:
-                                defea = True
-                                while defea == True:
-                                    cls()
-                                    defe = maps.defeated(money,p_lvl)
-                                    if defe == '2':
-                                        quit()
-                                        exit()
-                                    elif defe == '1':
-                                        if money < p_lvl*250:
-                                            noreply = input('''
-Your money cannot bring your life back...
-        ''')
-                                        else:
-                                            money-=p_lvl*250
-                                            p_hp = p_max_hp
-                                            defea = False
-                                            Snake = False
-                                            desert = False
                             g_drop = random.randint(g_drop_min,g_drop_max)
                             money += g_drop
                             p_xp += xp_drop
@@ -1853,8 +1495,8 @@ Your money cannot bring your life back...
                             snakebattle.snake_dead(xp_drop,g_drop,TaskSnek,ob,Venom)
                             if TaskSnek == True and ob < Venom:
                                 ob+=1
-                            if p_xp >= p_xp_lvl:
-                                p_xp = 0
+                            while p_xp >= p_xp_lvl:
+                                p_xp -= p_xp_lvl
                                 p_xp_lvl = math.ceil(p_xp_lvl*1.25)
                                 p_statpt += 3
                                 levelup(p_lvl)
@@ -1885,48 +1527,12 @@ Your money cannot bring your life back...
                     elif si == '2':
                         cls()
                         item_input = items(pot_n)
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1': 
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
+                        cls()
+                        if item_input == '1':
+                            use_potion()
+                        elif item_input != '2':
+                            noreply = input('something went wrong ¯\\_(ツ)_/¯')
+                            cls()
                     elif si =='3':
                         run()
                         Snake = False
@@ -1934,7 +1540,7 @@ Your money cannot bring your life back...
                         di = maps.desertmap(money,p_hp)
                     else:
                         cls()
-                        noreply = input('something went wrong ¯\_(ツ)_/¯')
+                        noreply = input('something went wrong ¯\\_(ツ)_/¯')
                         cls()
                 cls()
             elif name_n == 5:
@@ -1953,7 +1559,7 @@ Your money cannot bring your life back...
                 while Camel == True:
                     cls()
                     si = camelbattle.camel(p_hp,p_max_hp,p_str,p_spd,p_crit_c,p_dmg_min,p_dmg_max,e_hp,e_max_hp,e_spd,e_dmg_min,e_dmg_max)
-                    Snake = True
+                    Camel = True
                     cls()
                     if si == '1':
                         iscrit = random.randint(0,100)
@@ -1966,31 +1572,13 @@ Your money cannot bring your life back...
                             camelbattle.attack_camel(damage)
                         e_hp -= damage
                         cls()
-                        edamage = random.randint(e_dmg_min,e_dmg_max)
-                        p_hp -= edamage
-                        p_hp -= edamage/2
-                        cls()
-                        camelbattle.camelhit(edamage)
+                        if e_hp > 0:
+                            edamage = random.randint(e_dmg_min,e_dmg_max)
+                            p_hp -= edamage
+                            p_hp -= edamage/2
+                            cls()
+                            camelbattle.camelhit(edamage)
                         if e_hp <= 0:
-                            if p_hp <= 0:
-                                defea = True
-                                while defea == True:
-                                    cls()
-                                    defe = maps.defeated(money,p_lvl)
-                                    if defe == '2':
-                                        quit()
-                                        exit()
-                                    elif defe == '1':
-                                        if money < p_lvl*250:
-                                            noreply = input('''
-Your money cannot bring your life back...
-        ''')
-                                        else:
-                                            money-=p_lvl*250
-                                            p_hp = p_max_hp
-                                            defea = False
-                                            Camel = False
-                                            desert = False
                             g_drop = random.randint(g_drop_min,g_drop_max)
                             money += g_drop
                             p_xp += xp_drop
@@ -1998,8 +1586,8 @@ Your money cannot bring your life back...
                             camelbattle.camel_dead(xp_drop,g_drop,TaskCam,ob,Camel_Souls)
                             if TaskCam == True and ob < Camel_Souls:
                                 ob+=1
-                            if p_xp >= p_xp_lvl:
-                                p_xp = 0
+                            while p_xp >= p_xp_lvl:
+                                p_xp -= p_xp_lvl
                                 p_xp_lvl = math.ceil(p_xp_lvl*1.25)
                                 p_statpt += 3
                                 levelup(p_lvl)
@@ -2030,48 +1618,12 @@ Your money cannot bring your life back...
                     elif si == '2':
                         cls()
                         item_input = items(pot_n)
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
-                        if pot_n > 0:
-                            if item_input == '1':
-                                if pot_n > 0:
-                                    pot_n-=1
-                                    if p_hp + (.15*p_max_hp) > p_max_hp:
-                                        p_hp = p_max_hp
-                                    else:
-                                        p_hp += (p_max_hp*.15)
-                                else:
-                                    cls()
-                                    noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                    cls()
-                            elif item_input == '2':
-                                print()
-                        elif pot_n < 0:
-                            if item_input == '1':
-                                print()
-                            else:
-                                cls()
-                                noreply = input('something went wrong ¯\_(ツ)_/¯')
-                                cls()
+                        cls()
+                        if item_input == '1':
+                            use_potion()
+                        elif item_input != '2':
+                            noreply = input('something went wrong ¯\\_(ツ)_/¯')
+                            cls()
                     elif si =='3':
                         run()
                         Camel = False
@@ -2079,11 +1631,11 @@ Your money cannot bring your life back...
                         di = maps.desertmap(money,p_hp)
                     else:
                         cls()
-                        noreply = input('something went wrong ¯\_(ツ)_/¯')
+                        noreply = input('something went wrong ¯\\_(ツ)_/¯')
                         cls()
                 cls()
         else:
             cls()
-            noreply = input('something went wrong ¯\_(ツ)_/¯')
+            noreply = input('something went wrong ¯\\_(ツ)_/¯')
             cls()
             di = maps.desertmap(money,p_hp)
