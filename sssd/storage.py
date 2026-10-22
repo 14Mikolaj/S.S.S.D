@@ -8,6 +8,7 @@ import tempfile
 
 from .content import ENEMIES, ITEMS, LOCATIONS, QUESTS
 from .model import GameState, Player
+from .secrets import SECRET_FLAGS, SECRET_PROGRESS
 
 
 SAVE_VERSION = 1
@@ -105,6 +106,7 @@ def _decode(document) -> GameState:
     _require(location in visited, "The current location must have been visited.")
     known_flags = {"story_started", "seal_root", "seal_stone", "seal_tide", "finale_ready", "ended"}
     known_flags.update(f"boss:{enemy_id}" for enemy_id in ENEMIES)
+    known_flags.update(SECRET_FLAGS)
     flags = _string_set(data["flags"], "flags", known_flags)
     quests = _object(data["quests"], "quests")
     _require(set(quests) <= set(QUESTS), "Save refers to an unknown quest.")
@@ -113,6 +115,7 @@ def _decode(document) -> GameState:
     progress = _object(data["progress"], "progress")
     valid_progress = {f"kill:{enemy_id}" for enemy_id in ENEMIES}
     valid_progress.update(f"explore:{place}" for place in LOCATIONS)
+    valid_progress.update(SECRET_PROGRESS)
     _require(set(progress) <= valid_progress, "Save contains an unknown progress counter.")
     for key, value in progress.items():
         _integer(value, key)

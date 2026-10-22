@@ -46,9 +46,11 @@ travel numbers updated for the current roads. Locations, buildings, equipment,
 and creatures use larger illustrations too. Exploring a forest, speaking to
 the farmer, making camp, harvesting, shopping, crafting, and other actions open
 their own illustrated scenes with the actual dialogue and results.
+Wide windows also reveal full shop, forge, inn, and training interiors, with
+their choices placed beside the shelves, anvil, people, and exercise stations.
 
-Use a large terminal for the full drawings: around **132 columns × 52 rows**
-for the expanded village and narrative scenes, or **180 × 75** for the whole
+Use a large terminal for the full drawings: around **132 columns × 60 rows**
+for the expanded locations and narrative scenes, or **180 × 75** for the whole
 original island. There is no 78-column art limit. Smaller windows show alternate
 layouts or let you view a large drawing in sections instead of shrinking it.
 **`<` / `>`** move through scene views and shelf pages; all choice numbers work
@@ -56,6 +58,14 @@ from every view. Choices outside the current view are listed under **Elsewhere**
 At an action result, **Enter** continues and the view controls only inspect the
 picture; they do not repeat the action. **`?`** explains menu choices. For text
 lists without the artwork, run `python play.py --plain`.
+
+Look closely at odd little landmarks for optional discoveries. Their extra
+choices come after the familiar location options, so existing numbers stay the
+same. At the farm, a particularly smug crow runs **Noughts and Crows**: choose
+a numbered square to place X, then the crow plays O. Make three in a row; your
+first win **or draw** earns 12 gold and two herbs. Games are free, **0** leaves
+the table, and replays are for bragging rights. Discoveries and collected
+prizes are saved; an unfinished board starts fresh next time.
 
 ## The adventure
 
@@ -79,6 +89,8 @@ David left behind.
   storm drake's scale, plus three upgrade tiers for weapons and armour.
 - **Working farm and camps:** gather herbs once per day, rest for free in the
   village or farm, and recover partially at wilderness camps.
+- **Five optional curiosities:** strange conversations, a woodland riddle,
+  small keepsakes, and a crow with an inflated opinion of its board-game skills.
 
 Death sends you back to the village, costing 10% of your gold. Equipment,
 quest progress, and discoveries are kept. Levels restore health and energy.

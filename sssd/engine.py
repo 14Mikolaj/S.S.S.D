@@ -6,6 +6,7 @@ import random
 from .combat import Battle
 from .content import DIALOGUE, ENEMIES, ITEMS, LOCATIONS, QUESTS, RECIPES, STORY_BEATS
 from .model import GameState
+from .secrets import CrowGame, SECRETS
 
 
 SHOP_STOCK = ("potion", "antidote", "iron_sword", "iron_armor", "hunter_bow",
@@ -28,6 +29,7 @@ class Game:
         self.state = state if state is not None else GameState()
         self.rng = random.Random(seed)
         self.battle = None
+        self._crow_game = None
 
     @property
     def player(self):
@@ -47,6 +49,70 @@ class Game:
     @staticmethod
     def _quantity(qty):
         return type(qty) is int and 1 <= qty <= 99
+
+    @world_action
+    def investigate(self):
+        secret = SECRETS.get(self.state.location)
+        if secret is None:
+            return ["Nothing unusual catches your eye here. Unusual by Assonance's standards, anyway."]
+        flag = "secret:" + secret["id"]
+        messages = [secret["title"], secret["description"]]
+        if flag not in self.state.flags:
+            self.state.flags.add(flag)
+            self._note("Discovered: " + secret["title"] + ".")
+            messages.append("A small discovery, safely tucked into your journal.")
+        return messages
+
+    @world_action
+    def secret_action(self, choice):
+        secret = SECRETS.get(self.state.location)
+        if secret is None or not isinstance(choice, str) or choice not in dict(secret["actions"]):
+            return ["That curiosity is not here. The world declines your creative interpretation of geography."]
+        messages = self.investigate()
+        messages.extend(secret["responses"][choice])
+        if choice == secret.get("reward_action"):
+            flag = "secret_reward:" + secret["id"]
+            if flag in self.state.flags:
+                messages.append("You already collected this little keepsake. The joke, unfortunately, is renewable.")
+            else:
+                self.state.flags.add(flag)
+                for item, quantity in secret.get("reward", {}).items():
+                    self.player.add_item(item, quantity)
+                    messages.append(f"Received {quantity} x {ITEMS[item]['name']}.")
+                self._note("Solved the curiosity: " + secret["title"] + ".")
+        return messages
+
+    def start_crow_game(self):
+        """Return a fresh transient board only while safely at the farm."""
+        if self.battle is not None or self.state.location != "farm":
+            return None
+        self.investigate()
+        self._crow_game = CrowGame()
+        return self._crow_game
+
+    @world_action
+    def claim_crow_prize(self, session):
+        if self.state.location != "farm":
+            return ["The crow's prize table is at the farm."]
+        if not isinstance(session, CrowGame) or session is not self._crow_game:
+            return ["The crow needs to see a game played at this table. A confident claim is not a scorecard."]
+        result = session.verified_result()
+        if result is None:
+            return ["Finish a legal game before collecting a prize."]
+        self._crow_game = None
+        self._count("crow:played")
+        if result == "loss":
+            return ["No prize this time, but no money lost. The crow offers another free game."]
+        self._count("crow:won" if result == "win" else "crow:drawn")
+        if "crow_prize" in self.state.flags:
+            return ["Another fine game! Your first-win-or-draw prize is already collected. "
+                    "The crow pays you in slightly resentful respect."]
+        self.state.flags.add("crow_prize")
+        self.player.gold += 12
+        self.player.add_item("herb", 2)
+        self._note("Matched wits with the farm crow and earned its one-time prize.")
+        return ["The crow counts out 12 gold and 2 herbs. 'Promotional budget,' it mutters.",
+                "First win or draw prize collected! Further games are free, for bragging rights."]
 
     def objective_progress(self, objective):
         if objective.startswith("own:"):
