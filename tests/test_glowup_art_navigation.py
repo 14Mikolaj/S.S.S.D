@@ -37,15 +37,22 @@ class ArtNavigationTests(unittest.TestCase):
         output = StringIO()
         calls = 0
         selected = None
+        pans = 0
 
         def read(_prompt):
-            nonlocal calls, selected
+            nonlocal calls, selected, pans
             calls += 1
-            if calls == 1:
-                text = output.getvalue()
+            self.assertLess(calls, 100, "Could not reach the destination's actual map label.")
+            if selected is None:
+                self.assertEqual(before, cli.game.state)
+                self.assertEqual(saved_bytes, self.path.read_bytes())
+                text = "\n".join(cli.console.frame)
                 if visual:
                     match = re.search(re.escape(destination.upper()) + r"\[(\d+)\]", text)
-                    self.assertIsNotNone(match, f"No visible hotspot for {destination}:\n{text}")
+                    if match is None:
+                        self.assertIn("[>] Next", text)
+                        pans += 1
+                        return ">"  # Find the key on the landscape, not only its footer.
                     selected = match[1]
                 else:
                     selected = expected_key
@@ -54,16 +61,22 @@ class ArtNavigationTests(unittest.TestCase):
                     self.assertNotIn("TRAVELLER'S ATLAS", text)
                     self.assertNotIn(destination.upper() + "[", text)
                 return selected
-            if calls == 2:
+            if calls == pans + 2:
                 return ""  # Actual travel action's result/continue prompt.
             self.fail("Travel unexpectedly requested another input.")
 
         cli = self.cli(read, output, location=origin, visual=visual, unlocked=unlocked)
+        before = copy.deepcopy(cli.game.state)
+        save_game(before, self.path)
+        saved_bytes = self.path.read_bytes()
         with patch("sssd.cli.shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
-            with patch.object(cli.game, "move", wraps=cli.game.move) as move:
-                cli.travel()
+            with patch("sssd.cli.save_game", wraps=save_game) as save:
+                with patch.object(cli.game, "move", wraps=cli.game.move) as move:
+                    move.__name__ = "move"
+                    cli.travel()
         move.assert_called_once_with(destination)
-        self.assertEqual(2, calls)
+        save.assert_called_once()
+        self.assertEqual(pans + 2, calls)
         locked = destination == "castle" and not unlocked
         self.assertEqual(origin if locked else destination, cli.game.state.location)
         self.assertEqual(0 if locked else 1, cli.game.state.steps)
@@ -137,7 +150,7 @@ class ArtNavigationTests(unittest.TestCase):
                     return match[1]
                 if calls == 2:
                     self.assertIn("WORLD MAP", output.getvalue())
-                    self.assertIn("BRIDGE[1]", output.getvalue())
+                    self.assertRegex("\n".join(cli.console.frame), r"BRIDGE\[1\]|\[1\] BRIDGE")
                     return "0"
                 raise EOFError
 
@@ -150,7 +163,9 @@ class ArtNavigationTests(unittest.TestCase):
                     cli.adventure()
             self.assertEqual(3, calls)
             self.assertEqual(before, cli.game.state)
-            self.assertEqual(finale_ready, "Decide the fate of the old magic" in output.getvalue())
+            ending_key = re.search(r"\[4\]\s+(?:Old magic|Decide the fate of the old magic)",
+                                   output.getvalue())
+            self.assertEqual(finale_ready, ending_key is not None)
         self.assertEqual(road_keys[0] + 1, road_keys[1])
 
     def test_narrow_map_pages_help_and_back_preserve_state_and_checkpoint(self):

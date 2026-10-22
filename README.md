@@ -39,14 +39,23 @@ The ASCII scenery is also the menu: choose the number beside a building, path,
 camp, person, or guardian. On the world map, travel numbers appear **inside the
 destination's landmark**. `@` marks your current location, `.` a distant region,
 and `LOCK` a castle that still needs the three seals. Only neighboring places
-have travel numbers; the atlas pictures do not imply additional roads.
+have travel numbers; geographic proximity does not imply an additional road.
 
-Battles show every enemy, including adapted silhouettes from the original game.
-Shops, equipment, recipes, jobs, training, and story scenes have illustrations
-too. The interface fits an ordinary 80-column terminal and switches to smaller
-drawings or illustrated cards on narrow screens. Use **`<` / `>`** to turn shelf
-pages; item numbers stay the same across pages. **`?`** explains every available
-choice. For text lists without the artwork, run `python play.py --plain`.
+The original **173-column, 64-line island** returns on wide terminals, with
+travel numbers updated for the current roads. Locations, buildings, equipment,
+and creatures use larger illustrations too. Exploring a forest, speaking to
+the farmer, making camp, harvesting, shopping, crafting, and other actions open
+their own illustrated scenes with the actual dialogue and results.
+
+Use a large terminal for the full drawings: around **132 columns × 52 rows**
+for the expanded village and narrative scenes, or **180 × 75** for the whole
+original island. There is no 78-column art limit. Smaller windows show alternate
+layouts or let you view a large drawing in sections instead of shrinking it.
+**`<` / `>`** move through scene views and shelf pages; all choice numbers work
+from every view. Choices outside the current view are listed under **Elsewhere**.
+At an action result, **Enter** continues and the view controls only inspect the
+picture; they do not repeat the action. **`?`** explains menu choices. For text
+lists without the artwork, run `python play.py --plain`.
 
 ## The adventure
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import textwrap
@@ -15,9 +16,11 @@ from .engine import Game, SEALS, SHOP_STOCK
 from .model import GameState, Player
 from .presentation import (
     COMBAT_ACTIONS, COMPACT_COMBAT_ACTIONS, LANDMARKS, PROPS,
-    Illustration, cards, scene,
+    Illustration, cards, equipment_dock, panels, scene, beside,
 )
+from . import detailed_art, detailed_sprites
 from .scene_art import LOCATION_ART, SCREEN_ART
+from .story_art import EVENT_ART, WIDE_EVENT_ART
 from .sprites import COMPACT_ENEMY_ART, ITEM_ART, render_battle
 from .storage import SaveError, load_game, save_game
 from .world_map import render_world_map
@@ -64,39 +67,77 @@ class Console:
         self.clear_enabled = clear
         self.visual = visual
         self.rows = 0
+        self.frame = []
+        self.story_views = None
         self.input_echoes = (input_fn is None and not getattr(sys.stdin, "closed", True)
                              and sys.stdin.isatty())
 
     @property
     def width(self) -> int:
-        return max(20, min(78, shutil.get_terminal_size((80, 24)).columns - 2))
+        return max(20, shutil.get_terminal_size((80, 24)).columns - 2)
 
     @property
     def height(self) -> int:
         return max(12, shutil.get_terminal_size((80, 24)).lines)
 
-    def write(self, text="", *, indent=0):
+    def wrapped(self, text, *, indent=0, width=None):
         prefix = " " * indent
+        result = []
         for line in str(text).split("\n"):
-            wrapped = textwrap.wrap(
-                line, width=self.width, initial_indent=prefix,
+            result.extend(textwrap.wrap(
+                line, width=width or min(100, self.width), initial_indent=prefix,
                 subsequent_indent=prefix, replace_whitespace=False,
-            )
-            print("\n".join(wrapped) if wrapped else "", file=self.output)
-            self.rows += len(wrapped) or 1
+            ) or [""])
+        return result
+
+    def emit(self, lines):
+        print("\n".join(lines), file=self.output)
+        self.rows += len(lines)
+        self.frame.extend(lines)
+
+    def write(self, text="", *, indent=0):
+        self.emit(self.wrapped(text, indent=indent))
 
     def lines(self, messages):
         for message in messages:
             self.write(message)
 
     def rule(self):
-        self.write("-" * self.width)
+        self.emit(["-" * self.width])
 
     def art(self, text):
         lines = [line.rstrip() for line in text.strip("\n").splitlines()]
         if self.visual and all(len(line) <= self.width for line in lines):
-            print("\n".join(lines), file=self.output)
-            self.rows += len(lines)
+            self.emit(lines)
+
+    def story(self, drawing, messages):
+        """Keep the actual action's results beside/below its own illustration."""
+        if not self.visual:
+            self.lines(messages)
+            return
+        prefix = tuple(self.frame)
+        art_width = max(map(len, drawing.strip("\n").splitlines()), default=0)
+        available = self.height - self.rows - 3
+        if self.width - art_width >= 36:
+            prose = "\n".join(line for message in messages
+                              for line in self.wrapped(message, width=min(70, self.width - art_width - 4)))
+            views = panels(beside(drawing, prose), self.width, max(8, available))
+        else:
+            prose = [line for message in messages for line in self.wrapped(message)]
+            # Long conversations get text pages too, keeping portraits and words
+            # on screen together. Viewing another page never replays the action.
+            prose_height = max(3, available // 2)
+            prose_pages = [prose[index:index + prose_height]
+                           for index in range(0, len(prose), prose_height)] or [[]]
+            art_pages = panels(drawing, self.width,
+                               max(5, available - min(len(prose), prose_height)))
+            views = tuple(art_pages[min(index, len(art_pages) - 1)] + "\n"
+                          + "\n".join(prose_pages[min(index, len(prose_pages) - 1)])
+                          for index in range(max(len(art_pages), len(prose_pages))))
+        self.story_views = (views, prefix)
+        self.art(views[0])
+        if len(views) > 1:
+            self.write(f"Scene 1/{len(views)} | [<] Previous | [>] More scene/text")
 
     def gallery(self, entries):
         return cards(entries, self.width, self.height,
@@ -104,6 +145,8 @@ class Console:
 
     def clear(self):
         self.rows = 0
+        self.frame = []
+        self.story_views = None
         if (self.clear_enabled and self.output.isatty() and self.input_echoes
                 and os.environ.get("TERM") != "dumb"):
             print("\033[2J\033[H", end="", file=self.output)
@@ -118,7 +161,21 @@ class Console:
         return value.strip() if strip else value
 
     def pause(self):
-        self.read("\n[Enter] Continue ")
+        if not self.story_views:
+            self.read("\n[Enter] Continue ")
+            return
+        views, prefix = self.story_views
+        page = 0
+        while True:
+            answer = self.read("\n[Enter] Continue ")
+            if answer not in {"<", ">"} or len(views) == 1:
+                break
+            page = (page + (1 if answer == ">" else -1)) % len(views)
+            self.clear()
+            self.emit(prefix)
+            self.art(views[page])
+            self.write(f"Scene {page + 1}/{len(views)} | [<] Previous | [>] More scene/text")
+        self.story_views = None
 
     def choose(self, options, *, back="Back", illustration=None) -> str:
         """Read an existing numeric option; invalid input never escapes the menu."""
@@ -128,12 +185,35 @@ class Console:
         if visual and not visual.keys <= valid:
             raise ValueError("An illustration advertises a missing menu option.")
         if visual and any(len(line) > self.width for page in visual.pages for line in page.splitlines()):
-            visual = None  # Resizing must never hide the available choices.
+            # A resized terminal gets a viewport, never a vanished drawing.
+            visual = Illustration(tuple(part for page in visual.pages
+                                        for part in panels(page, self.width, self.height)),
+                                  visual.keys, visual.captions)
+        prefix = tuple(self.frame)
+        captions = dict(visual.captions) if visual else {}
+        if visual:
+            short = {key: captions.get(key, label.split(" (")[0].split(" | ")[0].split("\n")[0])
+                     for key, label in options}
+            missing_rows = sum(len(self.wrapped(f"[{key}] {label}"))
+                               for key, label in options if key not in visual.keys)
+            footer_rows = len(self.wrapped("Elsewhere: " + " / ".join(
+                f"[{key}] {short[key]}" for key, _ in options)))
+            available = self.height - self.rows - missing_rows - 2
+            if len(visual.pages) > 1 or any(len(part.splitlines()) > available for part in visual.pages):
+                view_height = max(6, available - footer_rows - 1)
+                visual = Illustration(tuple(part for drawing in visual.pages
+                                            for part in panels(drawing, self.width, view_height)),
+                                      visual.keys, visual.captions)
         page = 0
 
         def display():
             if visual:
                 self.art(visual.pages[page])
+                visible = set(re.findall(r"\[(\d+)\]", visual.pages[page]))
+                elsewhere = [f"[{key}] {short[key]}" for key, _ in options
+                             if key in visual.keys and key not in visible]
+                if elsewhere:
+                    self.write("Elsewhere: " + " / ".join(elsewhere))
             for key, label in options:
                 if not visual or key not in visual.keys:
                     self.write(f"[{key}] {label}")
@@ -153,6 +233,8 @@ class Console:
                 continue
             if visual and answer in {"<", ">"} and len(visual.pages) > 1:
                 page = (page + (1 if answer == ">" else -1)) % len(visual.pages)
+                self.clear()
+                self.emit(prefix)
                 display()
                 continue
             self.write("Choose one of the numbers above.")
@@ -200,32 +282,90 @@ class GameCLI:
 
     def illustrated_menu(self, name, choices, *, back="Back"):
         """Keep dispatch, help text and drawing hotspots on the same numbered keys."""
-        picture = scene(SCREEN_ART.get(name, ""),
-                        {token: key for token, key, _ in choices}, self.console.width)
+        keys = {token: key for token, key, _ in choices}
+        template = detailed_art.SCREEN_ART.get(name, SCREEN_ART.get(name, ""))
+        picture = scene(template, keys, max(self.console.width, 78))
         if picture is None:
             picture = self.console.gallery([(key, label, PROPS.get(token, PROPS["character"]))
                                             for token, key, label in choices])
         return self.console.choose([(key, label) for _, key, label in choices],
                                    back=back, illustration=picture)
 
-    def vignette(self, name, fallback="journal"):
-        picture = scene(SCREEN_ART.get(name, ""), {}, self.console.width)
-        self.console.art(picture.pages[0] if picture else PROPS[fallback])
+    def item_art(self, item):
+        drawing = detailed_sprites.ITEM_ART[item]
+        if max(map(len, drawing.splitlines())) > self.console.width - 4:
+            return ITEM_ART[item]
+        return drawing
+
+    def action_scene(self, action, args, battle):
+        """Choose a place/action illustration after the rules resolve the action.
+
+        The returned messages remain the authority on success, failure and loot;
+        artwork shows the activity or place, without inventing an outcome.
+        """
+        name = getattr(action, "__name__", "")
+        location = self.game.state.location
+        first = args[0] if args else None
+        def event(key):
+            drawing = WIDE_EVENT_ART.get(key, "")
+            if drawing and max(map(len, drawing.splitlines())) <= self.console.width:
+                return drawing
+            return EVENT_ART.get(key)
+        if name == "talk":
+            npc = first or "kieth"
+            return f"A WORD WITH {npc.upper()}", event("talk_" + npc)
+        if name in {"explore", "challenge", "move"}:
+            title = ("ON THE ROAD" if name == "move" else "AT THE GUARDIAN'S REFUGE"
+                     if name == "challenge" else "EXPLORING")
+            drawing = event("explore_" + location)
+            if name == "challenge" and self.game.battle is not None:
+                drawing = detailed_sprites.render_battle(self.game.battle.enemy_id, self.console.width)
+            if drawing is None:
+                template = detailed_art.LOCATION_ART[location]
+                drawing = re.sub(r"\{[a-z_]+\}", "   ", template)
+            return f"{title} | {content.LOCATIONS[location]['name']}", drawing
+        if name == "rest":
+            key = {"village": "rest_inn", "farm": "rest_farm"}.get(location, "rest_camp")
+            return "A MOMENT'S REST", EVENT_ART[key]
+        if name == "harvest":
+            return "AMONG THE BEET ROWS", EVENT_ART["harvest"]
+        if name in {"accept_quest", "claim_quest"}:
+            rewarded = name == "claim_quest" and self.game.state.quests.get(first) == "complete"
+            return "THE NOTICEBOARD", EVENT_ART["quest_reward" if rewarded else "quest_accept"]
+        if name in {"buy", "sell", "craft", "upgrade"}:
+            key = {"buy": "trade_buy", "sell": "trade_sell"}.get(name, name)
+            return {"buy": "AT JIMMY'S COUNTER", "sell": "YOUR SIDE OF THE COUNTER",
+                    "craft": "AT THE ANVIL", "upgrade": "THE SMITH'S WORKBENCH"}[name], EVENT_ART[key]
+        if name in {"equip", "use"}:
+            drawing = self.item_art(first) if first in ITEM_ART else detailed_art.EQUIPMENT_ART["inventory"]
+            return "YOUR EQUIPMENT", drawing
+        if name == "train":
+            template = detailed_art.SCREEN_ART.get("character", SCREEN_ART["character"])
+            return "AT THE TRAINING GROUND", re.sub(r"\{[a-z_]+\}", "   ", template)
+        if name == "finish":
+            return "THE WARDS OF ASSONANCE", EVENT_ART.get("ending_" + str(self.game.state.ending))
+        if name == "combat" and battle is not None:
+            if battle.result == "defeat":
+                return "BACK AT THE VILLAGE", SCREEN_ART["defeat"]
+            title = "VICTORY" if battle.result == "victory" else "ESCAPED" if battle.result == "fled" else "THE EXCHANGE"
+            return title, detailed_sprites.render_battle(battle.enemy_id, self.console.width)
+        return None, None
 
     def item_gallery(self, options, item_ids):
         """The key sits on the same shelf/card as the object it selects."""
-        return self.console.gallery([(key, label, ITEM_ART[item])
+        return self.console.gallery([(key, label, self.item_art(item))
                                      for (key, label), item in zip(options, item_ids)])
 
     def perform(self, action, *args, pause=True):
         battle = self.game.battle if action == self.game.combat else None
         messages = action(*args)
-        self.console.write()
-        if action == self.game.rest:
-            self.vignette("rest", "rest")
-        elif battle and battle.result in {"victory", "defeat"}:
-            self.vignette(battle.result, "character")
-        self.console.lines(messages)
+        title, drawing = self.action_scene(action, args, battle)
+        if drawing and self.console.visual:
+            self.heading(title)
+            self.console.story(drawing, messages)
+        else:
+            self.console.write()
+            self.console.lines(messages)
         if not self.active_battle():
             self.save()
         if pause:
@@ -285,10 +425,9 @@ class GameCLI:
             self.console.pause()
         self.game = Game(GameState(player=Player(name=name)), seed=self.seed)
         self.heading("A beginning, somewhere in the sand")
-        self.vignette("prologue", "travel")
-        self.console.lines(content.PROLOGUE)
+        self.console.story(SCREEN_ART["prologue"], content.PROLOGUE + [
+            "Tip: the journal keeps your next story objective and quest progress."])
         self.save()
-        self.console.write("Tip: the journal keeps your next story objective and quest progress.")
         self.console.pause()
         return True
 
@@ -344,18 +483,25 @@ class GameCLI:
                 ("journal", "Journal / next objective", self.journal),
             ]
             keys = {token: str(index) for index, (token, _, _) in enumerate(actions, 1)}
-            picture = scene(LOCATION_ART[state.location], keys, self.console.width)
+            template = detailed_art.WIDE_LOCATION_ART.get(state.location, "")
+            picture = scene(template, keys, self.console.width)
+            if picture is None:
+                picture = scene(detailed_art.LOCATION_ART[state.location], keys, self.console.width)
+            if picture is None:
+                picture = scene(LOCATION_ART[state.location], keys, self.console.width)
             if picture:
-                # Carried objects stay below the landscape; exits belong in it.
-                toolbar = (f" .--. [{keys['inventory']}] Pack    o [{keys['character']}] Train"
-                           f"    __/__ [{keys['journal']}] Journal\n"
-                           " |__|              /|\\             |__|__|")
+                toolbar = equipment_dock(keys, detailed_art.EQUIPMENT_ART, self.console.width)
                 if "ending" in keys:
-                    toolbar += f"\n    \\ * / [{keys['ending']}] Decide the fate of the old magic"
+                    toolbar += f"\n[{keys['ending']}] Decide the fate of the old magic"
                 carried = {keys[token] for token in ("inventory", "character", "journal", "ending")
                            if token in keys}
+                short = {"locals": "Locals", "quests": "Jobs", "shop": "Shop", "smith": "Smith",
+                         "rest": "Rest", "travel": "Road", "harvest": "Harvest", "farmer": "Farmer",
+                         "explore": "Explore", "challenge": "Guardian", "ending": "Old magic",
+                         "inventory": "Inventory", "character": "Training", "journal": "Journal"}
                 picture = Illustration((picture.pages[0] + "\n" + toolbar,),
-                                       picture.keys | carried)
+                                       picture.keys | carried,
+                                       tuple((key, short[token]) for token, key in keys.items()))
             else:
                 picture = self.console.gallery([(keys[token], label, PROPS[token])
                                                 for token, label, _ in actions])
@@ -405,7 +551,16 @@ class GameCLI:
             )
             keys = {command: key for key, _, command in actions}
             picture = scene(COMBAT_ACTIONS, keys, self.console.width)
-            if picture is not None and self.console.height - self.console.rows >= 13:
+            full_battle = detailed_sprites.render_battle(battle.enemy_id, self.console.width)
+            full_controls = detailed_sprites.render_actions(keys, self.console.width)
+            larger = (Illustration((full_controls,), frozenset(keys.values())) if full_controls
+                      else picture or scene(COMPACT_COMBAT_ACTIONS, keys, self.console.width))
+            required = (len(full_battle.splitlines()) + len(larger.pages[0].splitlines()) + 2
+                        if larger else self.console.height + 1)
+            if larger and self.console.height - self.console.rows >= required:
+                self.console.art(full_battle)
+                picture = larger
+            elif picture is not None and self.console.height - self.console.rows >= 13:
                 self.console.art(render_battle(battle.enemy_id, self.console.width))
             else:
                 self.console.art(COMPACT_ENEMY_ART[battle.enemy_id])
@@ -442,7 +597,8 @@ class GameCLI:
                                    sealed=set(SEALS) <= state.flags)
         if drawing:
             self.console.write("[@] You are here | [.] Distant | [#]/LOCK Needs three seals")
-            picture = Illustration((drawing,), frozenset(keys.values()))
+            picture = Illustration((drawing,), frozenset(keys.values()),
+                                   tuple((key, location.upper()) for location, key in keys.items()))
         else:
             # Small screens keep the reachable destinations and their landmarks.
             picture = self.console.gallery([(key, label, LANDMARKS[location])
@@ -471,7 +627,7 @@ class GameCLI:
                 (str(i), f"{content.QUESTS[qid]['name']} [{self.game.state.quests.get(qid, 'available')}]")
                 for i, qid in enumerate(quest_ids, 1)
             ]
-            notices = self.console.gallery([(key, label, " .----.\n | !? |\n '----'")
+            notices = self.console.gallery([(key, label, PROPS["quests"])
                                            for key, label in options])
             choice = self.console.choose(options, illustration=notices)
             if choice == "0":
@@ -553,7 +709,7 @@ class GameCLI:
             info = content.ITEMS[item_id]
             price = info["price"] if buying else max(1, info["price"] // 2)
             self.heading(("BUY | " if buying else "SELL | ") + item_name(item_id))
-            self.console.art(ITEM_ART[item_id])
+            self.console.art(self.item_art(item_id))
             self.console.write(f"{price} gold each | own {self.game.player.inventory.get(item_id, 0)}")
             self.console.write(info.get("description", ""))
             quantity = self.quantity()
@@ -596,7 +752,7 @@ class GameCLI:
             item = items[int(choice) - 1]
             info = content.ITEMS[item]
             self.heading(info["name"])
-            self.console.art(ITEM_ART[item])
+            self.console.art(self.item_art(item))
             self.console.write(info.get("description", ""))
             stats = [f"{key} +{info[key]}" for key in ("attack", "defense", "hp", "energy") if info.get(key)]
             if stats:
@@ -655,7 +811,7 @@ class GameCLI:
         recipe_id = recipes[int(choice) - 1]
         recipe = content.RECIPES[recipe_id]
         self.heading("AT THE ANVIL | " + recipe["name"])
-        self.console.art(ITEM_ART[recipe["produces"]])
+        self.console.art(self.item_art(recipe["produces"]))
         self.console.write(f"Makes: {item_name(recipe['produces'])} x{recipe.get('quantity', 1)}")
         self.console.write(f"Smith's fee: {recipe.get('gold', 0)} gold")
         for item, quantity in recipe["ingredients"].items():
@@ -682,7 +838,7 @@ class GameCLI:
             return
         item = candidates[int(choice) - 1]
         self.heading("UPGRADE | " + item_name(item))
-        self.console.art(ITEM_ART[item])
+        self.console.art(self.item_art(item))
         tier = player.upgrades.get(item, 0) + 1
         if tier > 3:
             self.console.write("This item is already at the maximum upgrade, +3.")
@@ -698,8 +854,7 @@ class GameCLI:
 
     def journal(self):
         self.heading("JOURNAL | THE ROAD AHEAD")
-        self.vignette("journal")
-        self.console.lines(self.game.journal())
+        self.console.story(SCREEN_ART["journal"], self.game.journal())
         self.console.pause()
 
     def ending(self):

@@ -1,8 +1,10 @@
 """The illustrated map must show real travel keys without wrapping or clipping."""
 
+import re
 import unittest
 
 from sssd.content import LOCATIONS
+from sssd.legacy_art import ORIGINAL_WORLD_MAP
 from sssd.world_map import SHORT_NAMES, render_world_map
 
 
@@ -14,7 +16,7 @@ class WorldMapTests(unittest.TestCase):
     def test_every_current_location_and_neighbor_key_are_inside_their_region(self):
         for current in LOCATIONS:
             choices = self.choices(current)
-            for width in (48, 60, 75, 76, 78, 100, 200):
+            for width in (48, 60, 74, 78, 105, 130, 146, 173, 200):
                 with self.subTest(current=current, width=width):
                     drawing = render_world_map(current, choices, width)
                     self.assertIn(SHORT_NAMES[current] + "[@]", drawing)
@@ -23,8 +25,28 @@ class WorldMapTests(unittest.TestCase):
                     for location in LOCATIONS:
                         self.assertEqual(1, drawing.count(SHORT_NAMES[location] + "["))
                     self.assertLessEqual(max(map(len, drawing.splitlines())), width)
-                    self.assertLessEqual(len(drawing.splitlines()), 18 if width < 76 else 14)
-                    self.assertTrue(drawing.isascii())
+                    if width >= 146:
+                        self.assertEqual(len(drawing.splitlines()), 64)
+                    else:
+                        self.assertTrue(drawing.isascii())
+
+    def test_large_terminal_restores_original_island_geometry(self):
+        drawing = render_world_map("village", self.choices("village"), 173, sealed=True)
+        self.assertEqual((173, 64),
+                         (max(map(len, drawing.splitlines())), len(drawing.splitlines())))
+        names = "|".join(SHORT_NAMES.values())
+        labels = re.compile(r"\b(?:" + names + r") ?\[[^]]+\]")
+
+        def landscape(art):
+            # Menu markers may change; every surrounding shoreline, building,
+            # tree, wave and original column must survive unchanged.
+            masked = labels.sub(lambda match: " " * len(match[0]), art)
+            return [line.rstrip() for line in masked.strip("\n").splitlines()]
+
+        self.assertEqual(landscape(ORIGINAL_WORLD_MAP), landscape(drawing))
+        trimmed = render_world_map("village", self.choices("village"), 146, sealed=True)
+        self.assertEqual([line[27:].rstrip() for line in drawing.splitlines()],
+                         trimmed.splitlines())
 
     def test_marker_numbers_are_supplied_not_global_location_numbers(self):
         drawing = render_world_map("farm", {"village": "7", "plains": "9"}, 78)

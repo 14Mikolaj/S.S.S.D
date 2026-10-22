@@ -11,9 +11,61 @@ import textwrap
 class Illustration:
     pages: tuple[str, ...]
     keys: frozenset[str] = frozenset()
+    captions: tuple[tuple[str, str], ...] = ()
 
 
 TOKEN = re.compile(r"\{([a-z_]+)\}")
+
+
+def panels(drawing: str, width: int, height: int) -> tuple[str, ...]:
+    """View a large canvas at its original scale, with overlapping edges.
+
+    Larger terminals reveal more of the drawing. Smaller terminals can pan;
+    letters and silhouettes are never stretched, wrapped or discarded.
+    """
+    lines = [line.rstrip() for line in drawing.strip("\n").splitlines()]
+    if not lines:
+        return ("",)
+    width, height = max(1, width), max(1, height)
+    canvas_width = max(map(len, lines))
+
+    def starts(length, size):
+        result = [0]
+        while result[-1] + size < length:
+            result.append(min(result[-1] + max(1, size - 2), length - size))
+        return result
+
+    return tuple("\n".join(line[x:x + width].rstrip() for line in lines[y:y + height])
+                 for y in starts(len(lines), height)
+                 for x in starts(canvas_width, width))
+
+
+def beside(left: str, right: str, *, gap=4) -> str:
+    """Join complete rectangular drawings without hand-counted label offsets."""
+    a, b = left.strip("\n").splitlines(), right.strip("\n").splitlines()
+    column = max(map(len, a), default=0) + gap
+    return "\n".join(((a[row] if row < len(a) else "").ljust(column)
+                      + (b[row] if row < len(b) else "")).rstrip()
+                     for row in range(max(len(a), len(b))))
+
+
+def equipment_dock(choices: dict[str, str], art: dict[str, str], width: int) -> str:
+    """Give each carried object its own aligned drawing and attached label."""
+    objects = []
+    for token, label in (("inventory", "Inventory"), ("character", "Training"),
+                         ("journal", "Journal")):
+        picture = art[token].strip("\n")
+        column = max(max(map(len, picture.splitlines())), len(label) + 4)
+        caption = f"[{choices[token]}] {label}".center(column)
+        objects.append(picture + "\n" + caption)
+    row = objects[0]
+    for picture in objects[1:]:
+        combined = beside(row, picture)
+        if max(map(len, combined.splitlines())) <= width:
+            row = combined
+        else:
+            row += "\n\n" + picture
+    return row
 
 
 def scene(template: str, choices: dict[str, str], width: int) -> Illustration | None:
@@ -36,7 +88,9 @@ def cards(entries, width: int, height: int = 24, *, max_lines=None) -> Illustrat
     """
     if not entries:
         return Illustration(("(Nothing on this shelf yet.)",))
-    columns = max(1, min(3, (width + 2) // 25))
+    largest = max(max(map(len, sprite.strip("\n").splitlines()), default=0)
+                  for _, _, sprite in entries)
+    columns = max(1, min(4, (width + 2) // (max(26, largest + 4) + 2)))
     card_width = (width - 2 * (columns - 1)) // columns
     inside = card_width - 4
     blocks = []
@@ -48,7 +102,8 @@ def cards(entries, width: int, height: int = 24, *, max_lines=None) -> Illustrat
         caption = []
         for line in f"[{key}] {label}".splitlines():
             caption.extend(textwrap.wrap(line, inside) or [""])
-        blocks.append(picture + [""] + caption)
+        padding = " " * max(0, (inside - max(map(len, picture), default=0)) // 2)
+        blocks.append([padding + line for line in picture] + [""] + caption)
 
     rows = []
     for start in range(0, len(blocks), columns):
@@ -80,7 +135,16 @@ def cards(entries, width: int, height: int = 24, *, max_lines=None) -> Illustrat
 # Pocket-sized props also serve as visual fallbacks for narrow terminals.
 PROPS = {
     "locals": r"  o o o  " "\n" r" /|/|/|\ " "\n" r" /|/|/|  ",
-    "quests": r" .----. " "\n" r" | !? | " "\n" r" '--||' ",
+    "quests": r"""
+    ______o______
+   /____________/|
+   | HELP WANTED||
+   |            ||
+   | -- -- --   ||
+   | -- --      ||
+   |_________.  |/
+              \_|
+""".strip("\n"),
     "shop": r"  /___\  " "\n" r" | $ $ | " "\n" r" |__[]_| ",
     "smith": r"   /==  " "\n" r" __|___ " "\n" r"  \__/  ",
     "rest": r"    z Z " "\n" r" |o____ " "\n" r" |____| ",

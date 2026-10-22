@@ -1,11 +1,13 @@
-"""A compact illustrated atlas: travel keys live inside their destinations.
+"""The original island restored, with continuous landscapes for smaller screens.
 
-These are regional vignettes rather than a road diagram. Their adjacency does
-not imply a route; the world graph alone decides which destinations get keys.
-All drawing characters are ASCII, so character counts equal terminal columns.
+Location markers are rebound to the active menu, never to historical numbers.
+Land outlines and landmarks describe geography; they do not invent road links.
 """
 
+import re
+
 from .content import LOCATIONS
+from .legacy_art import ORIGINAL_WORLD_MAP
 
 
 SHORT_NAMES = {
@@ -14,110 +16,181 @@ SHORT_NAMES = {
     "caves": "CAVES", "plains": "PLAINS", "bridge": "BRIDGE", "desert": "DESERT",
 }
 
-_ORDER = ("sea", "castle", "forest", "village", "farm",
-          "mountains", "caves", "plains", "bridge", "desert")
-_CELL_WIDTH = 14
+_DETAILED_ISLAND = r'''
+         ~                    ~                         ~                             ~
+                                ______________________________
+                      _________/              /\              \______              ~
+       ~             /                    ___/^^\___                 \______
+                    /          I>        /  (oo)    \      <I                \__
+                   /           |      __/  /  \\    \__     |                   \___
+   ~              /          _/\_   _/____/____\\______\_  _/\_       8888           \
+                 /           |[]|___|                  |___|[]|    8888888            \
+                /            |  |   |  _   _   _   _   |   |  |       ||      8888     |
+               /             |[]|   | |_| |_| |_| |_|  |   |[]|    8888888   8888888   |
+              /              |__|___|_______/\_________|___|__|       ||        ||     |
+  ~          /                    CASTLE[?]     /__\          _______/  \_______||__   |
+    __|__   /          8888                 __/____\__       /    /\    /\     /\   \  |
+   /__|_\  /       8888888888              /__________\     /    /__\__/__\___/__\   | |
+ ~~\____/~/   8888     ||      8888                         |    |[]|  |[]|   |[]|   | |
+  SEA[?] /  8888888  8888888  88888888    8888               |    VILLAGE[?]          | |
+   ~    /      ||      ||       ||    888888888              \___|__|__|__|___|__|__/  |
+       /     8888888  FOREST[?] 8888888    ||     .     .         .   .    .    .       |
+      /         ||    8888888     ||   8888888                      _       _           |
+     /     /\   ||      ||   /\  ||      ||           .         _| |_____| |_         |
+    /     /^^\ /  \    /  \ /^^\/  \    /  \                   | |___   ___| |        |
+   /    _/    \_      /\  _/    \_     /\            .          \____| |____/         |
+  /    /  /\    \    /^^\/  /\    \   /^^\        PLAINS[?]           | |      _        |
+ /    /__/  \____\__/    \_/  \____\_/    \__                      ___|_|____/ \__     |
+|       MOUNTAINS[?]        /\                \|/  \|/  \|/       DESERT[?]             |
+|   /\     /\    /\       /^^\                |    |    |                     .        |
+|__/^^\___/^^\__/^^\_____/    \___         .  .  .  .  .  .         ______________      |
+|  /    \ /    \/    \         ___\_                               /______________\     |
+|_/      V      \     \       /     \             _____            | []  __  [] |      |
+|      _______________       /       \___________/     \_          |____|__|____|      |
+ \    /     /^^^^\    \_____/                    |  |    \           ::: ::: :::       |
+  \__/      |    |                             _|__|__   \     \|/  ::: ::: :::       |
+      CAVES[?]          .          ~       ~   |______|   |     -+-    FARM[?]         |
+       \                                  ~   |______|   |      |   ::: ::: :::      |
+        \_____            _______            BRIDGE[?]   |          ::: ::: :::     /
+              \__________/       \___          |  |      /\_________________________/
+     ~                               \_________|__|_____/                     ~
+                   ~                           ~                  ~
+'''
+
+_SCENIC_ISLAND = r'''
+       ~                 ____________________                  ~
+                 _______/       /\           \_____
+    ~           /       I>   __/^^\__   <I         \______
+               /       _/\_ /  (oo)  \ _/\_                \_
+              /        |[]|/___/\___\|[]|       8888         \
+             /         |  |   /__\   |  |     8888888        |
+      ~     /          |__|___|__|___|__|        ||     8888  |
+   __|__   /              CASTLE[?]          ___/\____8888888 |
+  /__|_\  /    8888       8888              /____\  /\   ||  |
+ ~\____/~/  888888888   888888888  8888     |[]  []|/__\_/  \ |
+ SEA[?] /      ||         ||    8888888    | VILLAGE[?] |    |
+   ~   /    8888888   FOREST[?]    ||      |___|__|__|__|    |
+      /        ||      8888888  8888888                      |
+     /   /\   /  \        ||      ||          _    |    _    |
+    /   /^^\      /\     /  \    /  \        |_|___|___|_|   |
+   /   / /\ \    /^^\        .        .        \___   __/    |
+  /___/ /  \_\__/    \___         PLAINS[?]        | |       |
+ |      MOUNTAINS[?]     \    \|/  \|/  \|/      DESERT[?]   |
+ |   /\    /\      /\     \    |    |    |         |_|       |
+ |__/^^\__/^^\____/^^\____/            .        ____________ |
+ |   ____/^^^^^\___           ____            /____________\|
+  \_/    |     |   \_________/    \          | []  __  [] | |
+   CAVES[?]                      | |  \       |____|__|____| |
+    \                  ~        _|_|_  |        ::: :::    |
+     \____       ____     ~    |_____| |  \|/   FARM[?]    |
+          \_____/    \___       BRIDGE[?]   |    ::: :::   /
+   ~                    \______|_|_|___/\_______________/
+                 ~                           ~
+'''
+
+_NARROW_ISLAND = r'''
+   ~                ~                 ~
+             __________________
+       _____/        /\        \____
+      /    I>     __/^^\__   <I      \
+     /    _/\_   /  (oo)  \ _/\_     |
+    /     |[]|___|__/\____|_|[]|     |
+   /      |  |     /__\    |  |     |
+  /       |__|_____|__|____|__|     /
+ /             CASTLE[?]          /
+|      8888           8888       |
+|    88888888       88888888      |
+|       ||    FOREST[?] ||       |
+|    88888888       88888888      |
+|       ||            ||        |
+|______/  \__________/  \___     |
+     ~    __|__            \    |
+  SEA[?] /__|_\      /\  /\ \   |
+  ~   ~  \____/   __/__\/__\_\  |
+       ~   ~     | []    []   | |
+                 | VILLAGE[?]| |
+          _______|____|__|___| |
+   ~     /                     |
+        /    /\    /\          |
+       /    /^^\__/^^\          \
+      / ___/    \/    \___       |
+     /     MOUNTAINS[?]          |
+    /       /\  /\              |
+   /  _____/^^\/^^\____         |
+  /  /    /^^^^\       \        |
+ |__/     |    |        \       |
+ |    CAVES[?]        .         |
+ |            .    .      .     |
+ |    \|/ \|/ \|/    _   |   _  |
+ |     |   |   |    |_|__|__|_| |
+ |    PLAINS[?]      \___ ___/  |
+ |                       |     |
+ |   __________      DESERT[?]  |
+ |  /__________\        _|_     |
+ |  | [] __ [] |               |
+ |  |___|__|___|     ::: :::    |
+ |      FARM[?]      ::: :::    |
+  \       _________            /
+   \_____/   | |   \__________/
+        ~  __|_|__         ~
+    ~     |_______|  ~
+          BRIDGE[?]
+      ~      | |          ~
+'''
 
 
-def _vignette(location: str, marker: str, locked: bool) -> list[str]:
-    label = SHORT_NAMES[location] + "[" + marker + "]"
-    inside = label.center(12)
-    scenes = {
-        "sea": [
-            r" ~    __|__ ~ ",
-            r"    __\___/   ",
-            "~" + inside + "~",
-            r"  ~     ~     ",
-            r"~  ~~~    ~~~ ",
-            r" ~~   ~~~   ~ ",
-        ],
-        "castle": [
-            r" |_|_|_|_|_|  ",
-            r" | ^     ^ |  ",
-            "|" + inside + "|",
-            r" | []   [] |  ",
-            " |   LOCK  |  " if locked else r" |   /\    |  ",
-            r"_|___|_|___|_ ",
-        ],
-        "forest": [
-            r"  /\  /\ /\   ",
-            r" /^^\/^^V^^\  ",
-            "/" + inside + "\\",
-            r" /^^\/^^\/^\  ",
-            r"  || || ||    ",
-            r"._||_||_||_.  ",
-        ],
-        "village": [
-            r"   /\  /\     ",
-            r" _/ _\/ _\_   ",
-            "|" + inside + "|",
-            r"| []  __  [] |",
-            r"|____|__|____|",
-            r" .  .  .  .   ",
-        ],
-        "farm": [
-            r"   _/\_   \|/ ",
-            r"  /____\   |  ",
-            "|" + inside + "|",
-            r" |__[]__| ::: ",
-            r"  ::: ::: ::: ",
-            r"  ::: ::: ::: ",
-        ],
-        "mountains": [
-            r"   /\ /\      ",
-            r"  /  V  \     ",
-            "/" + inside + "\\",
-            r" / ^  /\ \    ",
-            r"/___\/__\_\   ",
-            r"  ^  ^  ^     ",
-        ],
-        "caves": [
-            r"   _______    ",
-            r" _/       \_  ",
-            "/" + inside + "\\",
-            r"|   /^^^\   | ",
-            r"|___|   |___| ",
-            r"  .  ...  .   ",
-        ],
-        "plains": [
-            r"       .      ",
-            r"  \|/  |  \|/ ",
-            "(" + inside + ")",
-            r"  \|/    \|/  ",
-            r"_.,___.,___._ ",
-            r" .   .    .   ",
-        ],
-        "bridge": [
-            r"   |      |   ",
-            r" __|______|__ ",
-            "|" + inside + "|",
-            r" __|______|__ ",
-            r" ~ |  ~~  | ~ ",
-            r"~~  ~   ~~  ~ ",
-        ],
-        "desert": [
-            r"  _   |   _   ",
-            r" |_|  |  |_|  ",
-            "(" + inside + ")",
-            r"   \__|__/    ",
-            r"  _   |  __   ",
-            r"_/ \__|_/  \_ ",
-        ],
-    }
-    return [line.ljust(_CELL_WIDTH) for line in scenes[location]]
+def _lines(art: str) -> list[str]:
+    return [line.rstrip() for line in art.strip("\n").splitlines()]
+
+
+def _with_coastal_tower(art: str, margin: int) -> str:
+    """Keep the old map's offshore watchtower beside the smaller island."""
+    lines = [" " * margin + line for line in _lines(art)]
+    tower = [r"   /\ ", r"  /__\ ", r"  |8 |", r" /___\ ", r" |III|",
+             r" |   |", r" |III|", r" |   |", r" |III|", r"_|___|_",
+             r" /|||\ ", r"/_____\ ", r"  ~  ~"]
+    for row, stroke in enumerate(tower, 4):
+        lines[row] = stroke.ljust(margin) + lines[row][margin:]
+    return "\n".join(lines)
+
+
+_LABEL = re.compile(r"\b(" + "|".join(SHORT_NAMES.values()) + r") ?\[(?:\d+|\?)\]")
+
+
+def _bind_markers(art: str, current: str, choices: dict[str, str], sealed: bool) -> str:
+    markers = {}
+    for location, name in SHORT_NAMES.items():
+        marker = "@" if location == current else choices.get(location)
+        if marker is None:
+            marker = "#" if location == "castle" and not sealed else "."
+        markers[name] = marker
+
+    def replace(match):
+        name = match[1]
+        # Retain every original column, including the old two-digit mountain key.
+        return (name + "[" + markers[name] + "]").ljust(len(match[0]))
+
+    lines = _lines(_LABEL.sub(replace, art))
+    if not sealed:
+        for index, line in enumerate(lines):
+            if "CASTLE[" in line:
+                lines[index] = re.sub(r"(CASTLE\[[^]]\]) {5}", r"\1 LOCK", line, count=1)
+                break
+    return "\n".join(lines)
 
 
 def render_world_map(current: str, choices: dict[str, str], width: int,
                      *, sealed: bool = False) -> str:
-    """Draw all ten regions, using the caller's actual neighbor key assignments.
+    """Render a detailed island; the caller may pan a tall drawing vertically.
 
-    ``sealed=True`` means the three ward seals are recovered and the castle is
-    open. A locked castle has ``[#]`` unless it has a travel key, in which case
-    that key and a separate ``LOCK`` label appear inside its battlements.
+    At 173+ columns this restores the actual 173x64 legacy island. At 146..172
+    only its empty offshore margin is removed, preserving every land feature.
+    Smaller terminals receive continuous illustrated islands: 105x38 at 105+
+    columns, 74x28 at 74+, and 39x47 at 48+. Below 48 this returns an empty string
+    so the interface can use accessible destination cards instead of clipping.
 
-    At >=76 columns this returns a 76-column, 14-line panorama. At 48..75 it
-    returns a 46-column, 14-line atlas. Below 48 it returns an empty string so
-    the caller can provide a narrower menu. It never crops names or markers.
+    ``sealed=True`` means all ward seals are recovered and the castle is open.
+    Otherwise its marker is [#], or its actionable key, with LOCK beside it.
     """
     if width < 48:
         return ""
@@ -132,26 +205,15 @@ def render_world_map(current: str, choices: dict[str, str], width: int,
     if len(set(choices.values())) != len(choices):
         raise ValueError("Travel keys must be unique.")
 
-    compact = width < 76
-    columns = 3 if compact else 5
-    cell_height = 3 if compact else 6
-    inner_width = columns * _CELL_WIDTH + columns - 1
-    title = " ASSONANCE / TRAVELLER'S ATLAS "
-    lines = ["+" + title.center(inner_width, "-") + "+"]
-    cells = []
-    for location in _ORDER:
-        marker = "@" if location == current else choices.get(location)
-        if marker is None:
-            marker = "#" if location == "castle" and not sealed else "."
-        drawing = _vignette(location, marker, location == "castle" and not sealed)
-        if compact:
-            drawing = [drawing[row] for row in (0, 2, 4)]
-        cells.append(drawing)
-    while len(cells) % columns:
-        cells.append([" " * _CELL_WIDTH] * cell_height)
-    for offset in range(0, len(cells), columns):
-        row = cells[offset:offset + columns]
-        for line_index in range(cell_height):
-            lines.append("|" + " ".join(cell[line_index] for cell in row) + "|")
-    lines.append("+" + "-" * inner_width + "+")
-    return "\n".join(lines)
+    if width >= 173:
+        art = ORIGINAL_WORLD_MAP
+    elif width >= 146:
+        # These 27 columns contain only spaces and isolated waves, no island art.
+        art = "\n".join(line[27:] for line in _lines(ORIGINAL_WORLD_MAP))
+    elif width >= 105:
+        art = _with_coastal_tower(_DETAILED_ISLAND, 16)
+    elif width >= 74:
+        art = _with_coastal_tower(_SCENIC_ISLAND, 10)
+    else:
+        art = _NARROW_ISLAND
+    return _bind_markers(art, current, choices, sealed)
