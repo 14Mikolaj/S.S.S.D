@@ -33,8 +33,20 @@ with **Kieth** in the village. Your journal always shows the next story goal.
 
 Menus use numbers. **0** goes back; in combat it attempts to flee. At the
 location menu, **0** saves and returns to the title. Ctrl+C exits safely to the
-last checkpoint. The interface fits an ordinary 80-column terminal, with
-paragraphs wrapping on smaller screens.
+last checkpoint.
+
+The ASCII scenery is also the menu: choose the number beside a building, path,
+camp, person, or guardian. On the world map, travel numbers appear **inside the
+destination's landmark**. `@` marks your current location, `.` a distant region,
+and `LOCK` a castle that still needs the three seals. Only neighboring places
+have travel numbers; the atlas pictures do not imply additional roads.
+
+Battles show every enemy, including adapted silhouettes from the original game.
+Shops, equipment, recipes, jobs, training, and story scenes have illustrations
+too. The interface fits an ordinary 80-column terminal and switches to smaller
+drawings or illustrated cards on narrow screens. Use **`<` / `>`** to turn shelf
+pages; item numbers stay the same across pages. **`?`** explains every available
+choice. For text lists without the artwork, run `python play.py --plain`.
 
 ## The adventure
 

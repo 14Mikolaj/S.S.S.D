@@ -11,9 +11,16 @@ import textwrap
 import time
 
 from . import content
-from .engine import Game, SHOP_STOCK
+from .engine import Game, SEALS, SHOP_STOCK
 from .model import GameState, Player
+from .presentation import (
+    COMBAT_ACTIONS, COMPACT_COMBAT_ACTIONS, LANDMARKS, PROPS,
+    Illustration, cards, scene,
+)
+from .scene_art import LOCATION_ART, SCREEN_ART
+from .sprites import COMPACT_ENEMY_ART, ITEM_ART, render_battle
 from .storage import SaveError, load_game, save_game
+from .world_map import render_world_map
 
 
 def default_save_path() -> Path:
@@ -51,16 +58,22 @@ def item_name(item_id: str | None) -> str:
 class Console:
     """Plain text works in pipes; an interactive terminal may clear between menus."""
 
-    def __init__(self, input_fn=None, output=None, *, clear=True):
+    def __init__(self, input_fn=None, output=None, *, clear=True, visual=True):
         self.input_fn = input_fn if input_fn is not None else input
         self.output = output if output is not None else sys.stdout
         self.clear_enabled = clear
+        self.visual = visual
+        self.rows = 0
         self.input_echoes = (input_fn is None and not getattr(sys.stdin, "closed", True)
                              and sys.stdin.isatty())
 
     @property
     def width(self) -> int:
         return max(20, min(78, shutil.get_terminal_size((80, 24)).columns - 2))
+
+    @property
+    def height(self) -> int:
+        return max(12, shutil.get_terminal_size((80, 24)).lines)
 
     def write(self, text="", *, indent=0):
         prefix = " " * indent
@@ -70,6 +83,7 @@ class Console:
                 subsequent_indent=prefix, replace_whitespace=False,
             )
             print("\n".join(wrapped) if wrapped else "", file=self.output)
+            self.rows += len(wrapped) or 1
 
     def lines(self, messages):
         for message in messages:
@@ -79,11 +93,17 @@ class Console:
         self.write("-" * self.width)
 
     def art(self, text):
-        lines = text.strip("\n").splitlines()
-        if all(len(line) <= self.width for line in lines):
+        lines = [line.rstrip() for line in text.strip("\n").splitlines()]
+        if self.visual and all(len(line) <= self.width for line in lines):
             print("\n".join(lines), file=self.output)
+            self.rows += len(lines)
+
+    def gallery(self, entries):
+        return cards(entries, self.width, self.height,
+                     max_lines=self.height - self.rows - 4)
 
     def clear(self):
+        self.rows = 0
         if (self.clear_enabled and self.output.isatty() and self.input_echoes
                 and os.environ.get("TERM") != "dumb"):
             print("\033[2J\033[H", end="", file=self.output)
@@ -94,21 +114,47 @@ class Console:
         if not self.input_echoes:
             # Piped input does not echo its newline as an interactive terminal does.
             print(file=self.output)
+        self.rows += 1
         return value.strip() if strip else value
 
     def pause(self):
         self.read("\n[Enter] Continue ")
 
-    def choose(self, options, *, back="Back") -> str:
+    def choose(self, options, *, back="Back", illustration=None) -> str:
         """Read an existing numeric option; invalid input never escapes the menu."""
-        for key, label in options:
-            self.write(f"[{key}] {label}")
-        self.write(f"[0] {back}")
+        options = [(str(key), label) for key, label in options]
         valid = {str(key) for key, _ in options} | {"0"}
+        visual = illustration if self.visual else None
+        if visual and not visual.keys <= valid:
+            raise ValueError("An illustration advertises a missing menu option.")
+        if visual and any(len(line) > self.width for page in visual.pages for line in page.splitlines()):
+            visual = None  # Resizing must never hide the available choices.
+        page = 0
+
+        def display():
+            if visual:
+                self.art(visual.pages[page])
+            for key, label in options:
+                if not visual or key not in visual.keys:
+                    self.write(f"[{key}] {label}")
+            if visual and len(visual.pages) > 1:
+                self.write(f"Page {page + 1}/{len(visual.pages)} | [<] Previous | [>] Next")
+            self.write(f"[0] {back}" + (" | [?] Explain choices" if visual else ""))
+
+        display()
         while True:
             answer = self.read()
             if answer in valid:
                 return answer
+            if visual and answer == "?":
+                for key, label in options:
+                    self.write(f"[{key}] {label}")
+                self.write(f"[0] {back}")
+                continue
+            if visual and answer in {"<", ">"} and len(visual.pages) > 1:
+                page = (page + (1 if answer == ">" else -1)) % len(visual.pages)
+                display()
+                continue
             self.write("Choose one of the numbers above.")
 
 
@@ -152,9 +198,33 @@ class GameCLI:
             )
         self.console.rule()
 
+    def illustrated_menu(self, name, choices, *, back="Back"):
+        """Keep dispatch, help text and drawing hotspots on the same numbered keys."""
+        picture = scene(SCREEN_ART.get(name, ""),
+                        {token: key for token, key, _ in choices}, self.console.width)
+        if picture is None:
+            picture = self.console.gallery([(key, label, PROPS.get(token, PROPS["character"]))
+                                            for token, key, label in choices])
+        return self.console.choose([(key, label) for _, key, label in choices],
+                                   back=back, illustration=picture)
+
+    def vignette(self, name, fallback="journal"):
+        picture = scene(SCREEN_ART.get(name, ""), {}, self.console.width)
+        self.console.art(picture.pages[0] if picture else PROPS[fallback])
+
+    def item_gallery(self, options, item_ids):
+        """The key sits on the same shelf/card as the object it selects."""
+        return self.console.gallery([(key, label, ITEM_ART[item])
+                                     for (key, label), item in zip(options, item_ids)])
+
     def perform(self, action, *args, pause=True):
+        battle = self.game.battle if action == self.game.combat else None
         messages = action(*args)
         self.console.write()
+        if action == self.game.rest:
+            self.vignette("rest", "rest")
+        elif battle and battle.result in {"victory", "defeat"}:
+            self.vignette(battle.result, "character")
         self.console.lines(messages)
         if not self.active_battle():
             self.save()
@@ -165,11 +235,9 @@ class GameCLI:
     def main_menu(self) -> int:
         while True:
             self.heading("S.S.S.D | THE WARDS OF ASSONANCE")
-            self.console.art(content.ART.get("title", ""))
-            self.console.write()
             self.console.write("An expanded adventure, grown from the original terminal RPG.")
-            choice = self.console.choose([
-                ("1", "New adventure"), ("2", "Continue from checkpoint"),
+            choice = self.illustrated_menu("title", [
+                ("new", "1", "New adventure"), ("continue", "2", "Continue from checkpoint"),
             ], back="Quit")
             if choice == "0":
                 return 0
@@ -217,6 +285,7 @@ class GameCLI:
             self.console.pause()
         self.game = Game(GameState(player=Player(name=name)), seed=self.seed)
         self.heading("A beginning, somewhere in the sand")
+        self.vignette("prologue", "travel")
         self.console.lines(content.PROLOGUE)
         self.save()
         self.console.write("Tip: the journal keeps your next story objective and quest progress.")
@@ -247,37 +316,52 @@ class GameCLI:
             self.console.write(location["description"])
             if self.game.player.stat_points:
                 self.console.write(f"You have {self.game.player.stat_points} attribute points to spend.")
-            self.console.write()
             if state.location == "village":
                 actions = [
-                    ("Talk to the locals", self.locals),
-                    ("Quest board", self.quest_board),
-                    ("Jimmy's shop", self.shop),
-                    ("The smith's workshop", self.workshop),
-                    ("Rest at the inn (free; next day)", lambda: self.perform(self.game.rest)),
+                    ("locals", "Talk to the locals", self.locals),
+                    ("quests", "Quest board", self.quest_board),
+                    ("shop", "Jimmy's shop", self.shop),
+                    ("smith", "The smith's workshop", self.workshop),
+                    ("rest", "Rest at the inn (free; next day)", lambda: self.perform(self.game.rest)),
                 ]
             elif state.location == "farm":
                 actions = [
-                    ("Harvest the farm", lambda: self.perform(self.game.harvest)),
-                    ("Rest at the farm (free; next day)", lambda: self.perform(self.game.rest)),
-                    ("Talk to the farmer", lambda: self.perform(self.game.talk, "farmer")),
+                    ("harvest", "Harvest the farm", lambda: self.perform(self.game.harvest)),
+                    ("rest", "Rest at the farm (free; next day)", lambda: self.perform(self.game.rest)),
+                    ("farmer", "Talk to the farmer", lambda: self.perform(self.game.talk, "farmer")),
                 ]
             else:
-                actions = [("Explore the area", lambda: self.encounter(self.game.explore))]
+                actions = [("explore", "Explore the area", lambda: self.encounter(self.game.explore))]
                 if location.get("boss"):
-                    actions.append(("Challenge the guardian", lambda: self.encounter(self.game.challenge)))
-                actions.append(("Make camp (partial recovery; next day)", lambda: self.perform(self.game.rest)))
+                    actions.append(("challenge", "Challenge the guardian", lambda: self.encounter(self.game.challenge)))
+                actions.append(("rest", "Make camp (partial recovery; next day)", lambda: self.perform(self.game.rest)))
             if state.location == "castle" and "finale_ready" in state.flags and state.ending is None:
-                actions.append(("Decide the fate of the old magic", self.ending))
+                actions.append(("ending", "Decide the fate of the old magic", self.ending))
             actions += [
-                ("Travel / world map", self.travel),
-                ("Inventory & equipment", self.inventory),
-                ("Character & training", self.character),
-                ("Journal / next objective", self.journal),
+                ("travel", "Travel / world map", self.travel),
+                ("inventory", "Inventory & equipment", self.inventory),
+                ("character", "Character & training", self.character),
+                ("journal", "Journal / next objective", self.journal),
             ]
+            keys = {token: str(index) for index, (token, _, _) in enumerate(actions, 1)}
+            picture = scene(LOCATION_ART[state.location], keys, self.console.width)
+            if picture:
+                # Carried objects stay below the landscape; exits belong in it.
+                toolbar = (f" .--. [{keys['inventory']}] Pack    o [{keys['character']}] Train"
+                           f"    __/__ [{keys['journal']}] Journal\n"
+                           " |__|              /|\\             |__|__|")
+                if "ending" in keys:
+                    toolbar += f"\n    \\ * / [{keys['ending']}] Decide the fate of the old magic"
+                carried = {keys[token] for token in ("inventory", "character", "journal", "ending")
+                           if token in keys}
+                picture = Illustration((picture.pages[0] + "\n" + toolbar,),
+                                       picture.keys | carried)
+            else:
+                picture = self.console.gallery([(keys[token], label, PROPS[token])
+                                                for token, label, _ in actions])
             choice = self.console.choose(
-                [(str(index), label) for index, (label, _) in enumerate(actions, 1)],
-                back="Save & return to title",
+                [(str(index), label) for index, (_, label, _) in enumerate(actions, 1)],
+                back="Save & return to title", illustration=picture,
             )
             if choice == "0":
                 if self.save(announce=True):
@@ -286,7 +370,7 @@ class GameCLI:
                 self.console.write("Your adventure is still open. Progress is kept here while you continue playing.")
                 self.console.pause()
                 continue
-            actions[int(choice) - 1][1]()
+            actions[int(choice) - 1][2]()
 
     def encounter(self, action):
         self.save()
@@ -319,9 +403,24 @@ class GameCLI:
                 f"Supplies: {self.game.player.inventory.get('potion', 0)} potions, "
                 f"{self.game.player.inventory.get('antidote', 0)} antidotes"
             )
-            self.console.write()
+            keys = {command: key for key, _, command in actions}
+            picture = scene(COMBAT_ACTIONS, keys, self.console.width)
+            if picture is not None and self.console.height - self.console.rows >= 13:
+                self.console.art(render_battle(battle.enemy_id, self.console.width))
+            else:
+                self.console.art(COMPACT_ENEMY_ART[battle.enemy_id])
+                picture = scene(COMPACT_COMBAT_ACTIONS, keys, self.console.width)
+            if picture is None:
+                # Very narrow displays keep every combat action on one page.
+                picture = Illustration(("\n".join(
+                    f"{icon} [{key}] {label}" for icon, key, label in (
+                        ("/", "1", "Attack"), ("/*", "2", "Power -3E"),
+                        ("O", "3", "Guard +3E"), ("+", "4", "Mend -4E"),
+                        ("(+)", "5", "Potion"), ("(x)", "6", "Antidote"))),),
+                    frozenset(keys.values()))
             choice = self.console.choose(
                 [(key, label) for key, label, _ in actions], back="Try to flee",
+                illustration=picture,
             )
             command = "flee" if choice == "0" else actions[int(choice) - 1][2]
             self.perform(self.game.combat, command)
@@ -330,16 +429,25 @@ class GameCLI:
         self.heading("WORLD MAP")
         state = self.game.state
         here = content.LOCATIONS[state.location]
-        self.console.art(content.ART.get("map", ""))
-        self.console.write(f"You are at {here['name']}.")
-        self.console.write("Roads from here:")
+        self.console.write(f"You are at {here['name']}. Numbers mark roads from here.")
         neighbors = list(here["neighbors"])
         options = []
         for index, location_id in enumerate(neighbors, 1):
             place = content.LOCATIONS[location_id]
             visited = "visited" if location_id in state.visited else "unexplored"
-            options.append((str(index), f"{place['name']} | level {place.get('level', 1)} | {visited}"))
-        choice = self.console.choose(options)
+            locked = " | LOCKED: needs all three seals" if location_id == "castle" and not set(SEALS) <= state.flags else ""
+            options.append((str(index), f"{place['name']} | level {place.get('level', 1)} | {visited}{locked}"))
+        keys = {location: str(index) for index, location in enumerate(neighbors, 1)}
+        drawing = render_world_map(state.location, keys, self.console.width,
+                                   sealed=set(SEALS) <= state.flags)
+        if drawing:
+            self.console.write("[@] You are here | [.] Distant | [#]/LOCK Needs three seals")
+            picture = Illustration((drawing,), frozenset(keys.values()))
+        else:
+            # Small screens keep the reachable destinations and their landmarks.
+            picture = self.console.gallery([(key, label, LANDMARKS[location])
+                                            for (key, label), location in zip(options, neighbors)])
+        choice = self.console.choose(options, illustration=picture)
         if choice != "0":
             self.perform(self.game.move, neighbors[int(choice) - 1])
 
@@ -349,7 +457,8 @@ class GameCLI:
             people = [("kieth", "Kieth - rumors and the road ahead"),
                       ("jimmy", "Jimmy - supplies and questionable advice"),
                       ("smith", "The smith - steel, recipes and upgrades")]
-            choice = self.console.choose([(str(i), label) for i, (_, label) in enumerate(people, 1)])
+            choice = self.illustrated_menu("locals", [(npc, str(i), label)
+                                                      for i, (npc, label) in enumerate(people, 1)])
             if choice == "0":
                 return
             self.perform(self.game.talk, people[int(choice) - 1][0])
@@ -358,15 +467,19 @@ class GameCLI:
         while True:
             self.heading("THE VILLAGE QUEST BOARD")
             quest_ids = list(content.QUESTS)
-            choice = self.console.choose([
+            options = [
                 (str(i), f"{content.QUESTS[qid]['name']} [{self.game.state.quests.get(qid, 'available')}]")
                 for i, qid in enumerate(quest_ids, 1)
-            ])
+            ]
+            notices = self.console.gallery([(key, label, " .----.\n | !? |\n '----'")
+                                           for key, label in options])
+            choice = self.console.choose(options, illustration=notices)
             if choice == "0":
                 return
             qid = quest_ids[int(choice) - 1]
             quest = content.QUESTS[qid]
             self.heading(quest["name"])
+            self.console.art(PROPS["quests"])
             self.console.write(f"Posted by: {quest.get('giver', 'the village')}")
             self.console.write(quest["description"])
             self.describe_objectives(quest)
@@ -416,10 +529,12 @@ class GameCLI:
     def shop(self):
         while True:
             self.heading("JIMMY'S SHOP")
-            choice = self.console.choose([("1", "Buy supplies or equipment"), ("2", "Sell items")])
+            choice = self.illustrated_menu("shop", [("buy", "1", "Buy supplies or equipment"),
+                                                    ("sell", "2", "Sell items")])
             if choice == "0":
                 return
             buying = choice == "1"
+            self.heading("JIMMY'S SHELVES | BUY" if buying else "YOUR ITEMS | SELL")
             stock = list(SHOP_STOCK) if buying else list(self.game.player.inventory)
             if not stock:
                 self.console.write("Your bag is empty.")
@@ -430,12 +545,17 @@ class GameCLI:
                 info = content.ITEMS[item]
                 price = info["price"] if buying else max(1, info["price"] // 2)
                 owned = self.game.player.inventory.get(item, 0)
-                options.append((str(index), f"{info['name']} | {price} gold each | own {owned}"))
-            item_choice = self.console.choose(options)
+                options.append((str(index), f"{info['name']}\n{price} gold each | own {owned}"))
+            item_choice = self.console.choose(options, illustration=self.item_gallery(options, stock))
             if item_choice == "0":
                 continue
             item_id = stock[int(item_choice) - 1]
-            self.console.write(content.ITEMS[item_id].get("description", ""))
+            info = content.ITEMS[item_id]
+            price = info["price"] if buying else max(1, info["price"] // 2)
+            self.heading(("BUY | " if buying else "SELL | ") + item_name(item_id))
+            self.console.art(ITEM_ART[item_id])
+            self.console.write(f"{price} gold each | own {self.game.player.inventory.get(item_id, 0)}")
+            self.console.write(info.get("description", ""))
             quantity = self.quantity()
             if quantity is not None:
                 self.perform(self.game.buy if buying else self.game.sell, item_id, quantity)
@@ -454,7 +574,7 @@ class GameCLI:
                 for i, item in enumerate(items, 1)
             ]
             options.append((str(len(items) + 1), "Unequip an item"))
-            choice = self.console.choose(options)
+            choice = self.console.choose(options, illustration=self.item_gallery(options[:-1], items))
             if choice == "0":
                 return
             if int(choice) == len(items) + 1:
@@ -463,16 +583,20 @@ class GameCLI:
                     self.console.write("You have no equipment to remove.")
                     self.console.pause()
                     continue
-                selection = self.console.choose([
+                self.heading("REMOVE EQUIPMENT")
+                slot_options = [
                     (str(i), f"{slot.title()}: {item_name(item)}")
                     for i, (slot, item) in enumerate(slots, 1)
-                ])
+                ]
+                selection = self.console.choose(slot_options, illustration=self.item_gallery(
+                    slot_options, [item for _, item in slots]))
                 if selection != "0":
                     self.perform(self.game.equip, "unequip:" + slots[int(selection) - 1][0])
                 continue
             item = items[int(choice) - 1]
             info = content.ITEMS[item]
             self.heading(info["name"])
+            self.console.art(ITEM_ART[item])
             self.console.write(info.get("description", ""))
             stats = [f"{key} +{info[key]}" for key in ("attack", "defense", "hp", "energy") if info.get(key)]
             if stats:
@@ -496,10 +620,10 @@ class GameCLI:
             self.console.write(f"Strength {player.strength} | Vitality {player.vitality} | Agility {player.agility}")
             self.console.write(f"Unspent points: {player.stat_points}")
             self.console.write("Leveling raises all attributes and restores your health and energy.")
-            choice = self.console.choose([
-                ("1", "Train strength (more damage)"),
-                ("2", "Train vitality (health and defense)"),
-                ("3", "Train agility (energy and critical chance)"),
+            choice = self.illustrated_menu("character", [
+                ("strength", "1", "Train strength (more damage)"),
+                ("vitality", "2", "Train vitality (health and defense)"),
+                ("agility", "3", "Train agility (energy and critical chance)"),
             ])
             if choice == "0":
                 return
@@ -508,7 +632,8 @@ class GameCLI:
     def workshop(self):
         while True:
             self.heading("THE SMITH'S WORKSHOP")
-            choice = self.console.choose([("1", "Craft equipment and supplies"), ("2", "Upgrade a weapon or armor")])
+            choice = self.illustrated_menu("workshop", [("craft", "1", "Craft equipment and supplies"),
+                                                       ("upgrade", "2", "Upgrade a weapon or armor")])
             if choice == "0":
                 return
             if choice == "1":
@@ -519,14 +644,18 @@ class GameCLI:
     def crafting(self):
         recipes = list(content.RECIPES)
         self.heading("CRAFTING RECIPES")
-        choice = self.console.choose([
+        options = [
             (str(i), content.RECIPES[recipe]["name"])
             for i, recipe in enumerate(recipes, 1)
-        ])
+        ]
+        choice = self.console.choose(options, illustration=self.item_gallery(
+            options, [content.RECIPES[recipe]["produces"] for recipe in recipes]))
         if choice == "0":
             return
         recipe_id = recipes[int(choice) - 1]
         recipe = content.RECIPES[recipe_id]
+        self.heading("AT THE ANVIL | " + recipe["name"])
+        self.console.art(ITEM_ART[recipe["produces"]])
         self.console.write(f"Makes: {item_name(recipe['produces'])} x{recipe.get('quantity', 1)}")
         self.console.write(f"Smith's fee: {recipe.get('gold', 0)} gold")
         for item, quantity in recipe["ingredients"].items():
@@ -544,13 +673,16 @@ class GameCLI:
             self.console.write("Bring a weapon or a piece of armor to the smith.")
             self.console.pause()
             return
-        choice = self.console.choose([
+        options = [
             (str(i), f"{item_name(item)} +{player.upgrades.get(item, 0)}")
             for i, item in enumerate(candidates, 1)
-        ])
+        ]
+        choice = self.console.choose(options, illustration=self.item_gallery(options, candidates))
         if choice == "0":
             return
         item = candidates[int(choice) - 1]
+        self.heading("UPGRADE | " + item_name(item))
+        self.console.art(ITEM_ART[item])
         tier = player.upgrades.get(item, 0) + 1
         if tier > 3:
             self.console.write("This item is already at the maximum upgrade, +3.")
@@ -566,6 +698,7 @@ class GameCLI:
 
     def journal(self):
         self.heading("JOURNAL | THE ROAD AHEAD")
+        self.vignette("journal")
         self.console.lines(self.game.journal())
         self.console.pause()
 
@@ -573,7 +706,8 @@ class GameCLI:
         self.heading("THE OLD MAGIC IS LISTENING")
         self.console.write("The last guardian has fallen. The choice belongs to you.")
         self.console.write("Restore the old magic, or release it. Either path lets you keep exploring afterward.")
-        choice = self.console.choose([("1", "Restore the old magic"), ("2", "Release the old magic")])
+        choice = self.illustrated_menu("ending", [("restore", "1", "Restore the old magic"),
+                                                ("release", "2", "Release the old magic")])
         if choice != "0":
             self.perform(self.game.finish, "restore" if choice == "1" else "release")
 
@@ -591,8 +725,9 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Play the expanded S.S.S.D terminal adventure.")
     parser.add_argument("--save", type=Path, default=default_save_path(), help="checkpoint file (default: .saves/slot1.json beside the game)")
     parser.add_argument("--seed", type=int, help="seed the adventure's random number generator")
+    parser.add_argument("--plain", action="store_true", help="use text lists without ASCII illustrations")
     args = parser.parse_args(argv)
-    cli = GameCLI(Console(), args.save, seed=args.seed)
+    cli = GameCLI(Console(visual=not args.plain), args.save, seed=args.seed)
     try:
         result = cli.main_menu()
     except (EOFError, KeyboardInterrupt):
